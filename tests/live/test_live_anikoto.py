@@ -2,7 +2,7 @@
 
 import pytest
 
-from anime_extensions.models import Anime, Episode, Server, Stream
+from anime_extensions.models import Anime, Stream
 from anime_extensions.sources.anikoto import Anikoto
 
 

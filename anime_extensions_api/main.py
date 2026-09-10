@@ -57,4 +57,5 @@ def cli() -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(cli())
+    cli()
+    sys.exit(0)

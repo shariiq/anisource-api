@@ -63,7 +63,7 @@ async def get_popular(
             ttl_seconds=settings.cache.popular_ttl_seconds,
         )
 
-    return PaginatedResponse[AnimeSchema](**response_data)
+    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
 
 
 @router.get(
@@ -109,7 +109,7 @@ async def get_latest(
             ttl_seconds=settings.cache.latest_ttl_seconds,
         )
 
-    return PaginatedResponse[AnimeSchema](**response_data)
+    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
 
 
 @router.get(
@@ -156,7 +156,7 @@ async def search_anime(
             ttl_seconds=settings.cache.search_ttl_seconds,
         )
 
-    return PaginatedResponse[AnimeSchema](**response_data)
+    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
 
 
 @router.get(

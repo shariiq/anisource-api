@@ -7,7 +7,7 @@ name = "anisource-api"
 version = "0.2.0"
 description = "High-performance async Python library and REST API for anime scrapers, episode indexers, and video extractors."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = "MIT"
 authors = [
     { name = "Anime Extensions Contributors" }
@@ -57,7 +57,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 exclude = [".claude"]
 

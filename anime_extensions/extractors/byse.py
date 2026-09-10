@@ -60,14 +60,15 @@ class ByseExtractor(BaseExtractor):
 
     async def extract(
         self,
-        embed_url: str,
-        *,
-        embed_parent: str = "",
-        embed_origin: str = "",
-        label_prefix: str = "",
+        url: str,
         **kwargs: Any,
     ) -> list[Stream]:
         """Extract streams from Byse embed URL."""
+        embed_url = url
+        embed_parent = kwargs.get("embed_parent", "")
+        embed_origin = kwargs.get("embed_origin", "")
+        label_prefix = kwargs.get("label_prefix", "")
+
         session = await self._ensure_session()
         parsed_url = urlparse(embed_url)
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"

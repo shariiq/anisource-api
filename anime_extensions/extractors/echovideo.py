@@ -30,12 +30,12 @@ class EchoVideoExtractor(BaseExtractor):
 
     async def extract(
         self,
-        embed_url: str,
-        *,
-        label_prefix: str = "",
+        url: str,
         **kwargs: Any,
     ) -> list[Stream]:
         """Extract streams from EchoVideo embed URL."""
+        embed_url = url
+        label_prefix = kwargs.get("label_prefix", "")
         session = await self._ensure_session()
         parsed = urlparse(embed_url)
         host = parsed.netloc

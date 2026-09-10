@@ -85,8 +85,10 @@ class MKissaKeyManager:
 
             build_id, seeds, mask, bootstrap, config = handshake
             try:
-                part_b = base64.b64decode(bootstrap["partB"], validate=True)
-                epoch = int(bootstrap["epoch"])
+                # bootstrap["partB"] is object from dict[str, object] so cast to str
+                part_b_str: str = str(bootstrap["partB"])
+                part_b = base64.b64decode(part_b_str, validate=True)
+                epoch = int(str(bootstrap["epoch"]))
             except (KeyError, TypeError, ValueError, binascii.Error) as error:
                 raise CryptoError("Invalid MKissa bootstrap response") from error
             if len(part_b) < 32:
@@ -119,7 +121,7 @@ class MKissaKeyManager:
         """Return whether a GraphQL response reports an AA crypto failure."""
         try:
             errors = json.loads(body).get("errors", [])
-        except (json.JSONDecodeError, AttributeError):
+        except json.JSONDecodeError, AttributeError:
             return False
         return any(
             isinstance(error, dict)
@@ -134,7 +136,7 @@ class MKissaKeyManager:
             return None
         try:
             errors = json.loads(body).get("errors", [])
-        except (json.JSONDecodeError, AttributeError):
+        except json.JSONDecodeError, AttributeError:
             return None
         for error in errors:
             if not isinstance(error, dict) or not error.get("message"):
@@ -234,7 +236,7 @@ class MKissaKeyManager:
                         saw_stale = saw_stale or response.status in {403, 404}
                         continue
                     data = await response.json(content_type=None)
-            except (TimeoutError, aiohttp.ClientError, ValueError):
+            except TimeoutError, aiohttp.ClientError, ValueError:
                 return None, False
             if not isinstance(data, dict):
                 continue
@@ -259,7 +261,7 @@ class MKissaKeyManager:
                 if response.status < 200 or response.status >= 300:
                     return None
                 app_js = await response.text(errors="replace")
-        except (TimeoutError, aiohttp.ClientError):
+        except TimeoutError, aiohttp.ClientError:
             return None
 
         chunk_references = sorted(

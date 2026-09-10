@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from urllib.parse import urljoin
 
-import m3u8
+import m3u8  # type: ignore[import-untyped]
 
 from ..models import Stream, Subtitle
 
@@ -33,7 +33,7 @@ def decode_numeric_hls(text: str) -> str:
 
         if bytes_list:
             return bytes(bytes_list).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         pass
 
     return text

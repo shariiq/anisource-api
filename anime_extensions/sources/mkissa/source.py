@@ -329,7 +329,7 @@ class MKissa(BaseSource):
             show_id = variables["showId"]
             translation_type = variables["translationType"]
             episode_string = variables["episodeString"]
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except json.JSONDecodeError, KeyError, TypeError:
             log.warning("MKissa received an invalid episode identifier")
             return []
 
@@ -514,7 +514,7 @@ class MKissa(BaseSource):
     def _source_priority(value: object) -> float:
         try:
             return float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return 0.0
 
     @staticmethod

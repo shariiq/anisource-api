@@ -30,9 +30,12 @@ async def health_check() -> HealthCheckResponse:
     # Optional: Get process memory info via standard library if available
     memory_mb = 0.0
     try:
-        import resource  # Available on Unix/POSIX
+        import sys
 
-        memory_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+        if sys.platform != "win32":
+            import resource  # Available on Unix/POSIX
+
+            memory_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0  # type: ignore[attr-defined]
     except ImportError:
         # Fallback on Windows/other platforms
         try:

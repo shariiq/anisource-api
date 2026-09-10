@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import base64
+import gzip
+import json
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -242,3 +245,90 @@ def generate_byse_keypair_and_attestation(nonce: str) -> tuple[dict[str, Any], s
     sig_b64 = b64url_encode(signature)
 
     return jwk, sig_b64
+
+
+# =====================================================================
+# Miruro Pipe API & Stream Proxy Utilities
+# =====================================================================
+
+MIRURO_PIPE_KEY = bytes.fromhex("71951034f8fbcf53d89db52ceb3dc22c")
+MIRURO_PROXY_KEY = bytes.fromhex("a54d389c18527d9fd3e7f0643e27edbe")
+MIRURO_PROXY_A = "https://vault01.ultracloud.cc/"
+MIRURO_PROXY_B = "https://vault02.ultracloud.cc/"
+MIRURO_FNV_OFFSET_BASIS = 2166136261
+MIRURO_FNV_PRIME = 16777619
+
+
+def miruro_xor_encode(data_str: str, key: bytes = MIRURO_PROXY_KEY) -> str:
+    """XOR-obfuscate a UTF-8 string with key bytes (cycled) and base64url-encode."""
+    data_bytes = data_str.encode("utf-8")
+    out = bytes([b ^ key[i % len(key)] for i, b in enumerate(data_bytes)])
+    return b64url_encode(out)
+
+
+def miruro_fnv1a_mod2(seed: str) -> int:
+    """32-bit FNV-1a hash mod 2 for deterministic proxy selection."""
+    if not seed:
+        return 0
+    h = MIRURO_FNV_OFFSET_BASIS
+    for b in seed.encode("utf-8"):
+        h ^= b
+        h = (h * MIRURO_FNV_PRIME) & 0xFFFFFFFF
+    return h & 1
+
+
+def miruro_build_proxied_url(
+    stream_url: str,
+    referer: str,
+    proxy_key: bytes = MIRURO_PROXY_KEY,
+    proxy_seed: str = "",
+) -> str:
+    """Build a Miruro proxy URL wrapping stream_url and referer through ultracloud vault."""
+    if not proxy_key:
+        return stream_url
+    proxy_base = MIRURO_PROXY_B if miruro_fnv1a_mod2(proxy_seed) == 1 else MIRURO_PROXY_A
+    obf_url = miruro_xor_encode(stream_url, proxy_key)
+    obf_ref = miruro_xor_encode(referer, proxy_key)
+    return f"{proxy_base}{obf_url}~{obf_ref}/pl.m3u8"
+
+
+def miruro_build_pipe_url(
+    base_url: str,
+    path: str,
+    method: str = "GET",
+    query: dict[str, Any] | None = None,
+    body: dict[str, Any] | None = None,
+) -> str:
+    """Build obfuscated pipe API URL."""
+    payload = {
+        "path": path,
+        "method": method,
+        "query": query or {},
+        "body": body,
+        "version": "0.2.0",
+        "timestamp": int(time.time() * 1000),
+    }
+    json_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    encoded = b64url_encode(json_bytes)
+    return f"{base_url.rstrip('/')}/api/secure/pipe?e={encoded}"
+
+
+def miruro_decrypt_pipe(
+    body: str,
+    obfuscated_header: str | None = "2",
+    pipe_key: bytes = MIRURO_PIPE_KEY,
+) -> str:
+    """Decrypt pipe API response (XOR + gzip decompress)."""
+    if obfuscated_header != "2":
+        return body
+    trimmed = body.strip()
+    if not trimmed:
+        return ""
+    try:
+        decoded = b64url_decode(trimmed)
+        xor_data = bytearray(decoded)
+        for i in range(len(xor_data)):
+            xor_data[i] ^= pipe_key[i % len(pipe_key)]
+        return gzip.decompress(bytes(xor_data)).decode("utf-8")
+    except Exception as e:
+        raise CryptoError(f"Miruro: Failed to decrypt pipe response: {e}") from e

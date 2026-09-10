@@ -1,8 +1,5 @@
 """Unit tests for cryptographic ciphers, RC4, VRF, and Byse PoW solvers."""
 
-import pytest
-
-from anime_extensions.exceptions import CryptoError
 from anime_extensions.utils.crypto import (
     b64url_decode,
     b64url_encode,

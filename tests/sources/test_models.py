@@ -2,9 +2,7 @@
 
 from datetime import datetime
 
-import pytest
-
-from anime_extensions.models import Anime, Episode, Server, Stream, Subtitle
+from anime_extensions.models import Anime, Episode, Stream, Subtitle
 
 
 def test_anime_model_to_dict():
@@ -48,9 +46,7 @@ def test_stream_model_with_subtitles():
         url="https://cdn.example.com/stream.m3u8",
         quality="1080p",
         is_hls=True,
-        subtitles=[
-            Subtitle(url="https://cdn.example.com/en.vtt", label="English", language="en")
-        ],
+        subtitles=[Subtitle(url="https://cdn.example.com/en.vtt", label="English", language="en")],
     )
     d = stream.to_dict()
     assert d["is_hls"] is True

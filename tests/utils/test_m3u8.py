@@ -1,7 +1,5 @@
 """Unit tests for M3U8 parsing and playlist processing utilities."""
 
-import pytest
-
 from anime_extensions.utils.m3u8 import (
     absolutize_m3u8_urls,
     decode_numeric_hls,
@@ -32,11 +30,11 @@ def test_decode_numeric_hls_out_of_range():
 def test_absolutize_m3u8_urls():
     """Test rewriting relative segment and key URIs to absolute URIs."""
     playlist = (
-        '#EXTM3U\n'
+        "#EXTM3U\n"
         '#EXT-X-KEY:METHOD=AES-128,URI="key.enc"\n'
-        '#EXTINF:10.0,\n'
-        'segment_0.ts\n'
-        'https://example.com/segment_1.ts\n'
+        "#EXTINF:10.0,\n"
+        "segment_0.ts\n"
+        "https://example.com/segment_1.ts\n"
     )
     base = "https://cdn.example.com/hls/ep1/"
     res = absolutize_m3u8_urls(playlist, base)

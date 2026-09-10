@@ -25,9 +25,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.13
+          python-version: "3.13"
 
       - name: Run Ruff Lint
         run: uvx ruff check .
@@ -50,18 +48,16 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync --extra dev
 
       - name: Bytecode compilation check
-        run: python -m compileall -q anime_extensions anime_extensions_api
+        run: uv run python -m compileall -q anime_extensions anime_extensions_api
 
       - name: Run test suite
-        run: pytest -v
+        run: uv run pytest -v
 
   docker:
     name: Docker Build Validation
@@ -79,6 +75,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: anime-extensions-api:test
+          tags: anisource-api:test
           cache-from: type=gha
           cache-to: type=gha,mode=max

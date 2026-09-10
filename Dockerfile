@@ -1,7 +1,7 @@
 # ==============================================================================
 # Modern 2026 High-Performance Multi-Stage Dockerfile (uv-powered)
 # ==============================================================================
-FROM ghcr.io/astral-sh/uv:0.6-python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:0.12.12-python3.14-trixie AS builder
 
 WORKDIR /app
 
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ==============================================================================
 # Production Runtime Stage
 # ==============================================================================
-FROM python:3.13-slim-bookworm AS runtime
+FROM python:3.14.7-slim-bookworm AS runtime
 
 WORKDIR /app
 

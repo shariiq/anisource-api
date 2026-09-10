@@ -33,7 +33,7 @@ def decode_numeric_hls(text: str) -> str:
 
         if bytes_list:
             return bytes(bytes_list).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
+    except ValueError, UnicodeDecodeError:
         pass
 
     return text

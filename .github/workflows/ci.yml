@@ -108,7 +108,6 @@ jobs:
   test-live:
     name: Live tests (${{ matrix.source }})
     runs-on: ubuntu-latest
-    needs: [lint, test-unit]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -147,7 +146,6 @@ jobs:
   build-package:
     name: Build package
     runs-on: ubuntu-latest
-    needs: [lint, type-check, test-unit]
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -177,7 +175,6 @@ jobs:
   docker-build:
     name: Build container
     runs-on: ubuntu-latest
-    needs: [lint, test-unit]
     timeout-minutes: 20
     steps:
       - name: Checkout

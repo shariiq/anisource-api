@@ -130,7 +130,7 @@ class AniWaves(BaseSource):
                 Anime(
                     id=anime_id,
                     title=title,
-                    url=url_path,
+                    url=f"{self.base_url}{url_path}",
                     thumbnail=thumbnail,
                 )
             )
@@ -148,7 +148,7 @@ class AniWaves(BaseSource):
         anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
 
         url = f"{self.base_url}{anime_path}"
-        status, html = await self._request(url)
+        html = await self._request(url)
         soup = BeautifulSoup(html, "html.parser")
 
         # Title
@@ -264,8 +264,8 @@ class AniWaves(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        status, data = await self._get_json(ajax_url, headers=headers, params={"vrf": vrf})
-        if status != 200 or not isinstance(data, dict):
+        data = await self._get_json(ajax_url, headers=headers, params={"vrf": vrf})
+        if not isinstance(data, dict):
             return []
 
         html_result = data.get("result", "")
@@ -339,8 +339,8 @@ class AniWaves(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        status, data = await self._get_json(ajax_url, headers=headers)
-        if status != 200 or not isinstance(data, dict):
+        data = await self._get_json(ajax_url, headers=headers)
+        if not isinstance(data, dict):
             return []
 
         html_result = data.get("result", "")
@@ -421,8 +421,8 @@ class AniWaves(BaseSource):
 
         params = {"id": server_id, "asi": "0", "autoPlay": "0"}
 
-        status, data = await self._get_json(ajax_url, headers=headers, params=params)
-        if status != 200 or not isinstance(data, dict):
+        data = await self._get_json(ajax_url, headers=headers, params=params)
+        if not isinstance(data, dict):
             return None
 
         result = data.get("result", {})

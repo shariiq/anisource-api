@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from urllib.parse import quote
 
+
 def _rc4_encrypt(key: str, data: str) -> str:
     """RC4 stream cipher."""
     key_bytes = key.encode("utf-8")
@@ -27,6 +28,7 @@ def _rc4_encrypt(key: str, data: str) -> str:
 
     return base64.urlsafe_b64encode(out).decode("utf-8").rstrip("=")
 
+
 def _exchange(input_str: str, keys: list[str]) -> str:
     """Character substitution."""
     key1, key2 = keys[0], keys[1]
@@ -35,6 +37,7 @@ def _exchange(input_str: str, keys: list[str]) -> str:
         idx = key1.find(ch)
         result.append(key2[idx] if idx != -1 else ch)
     return "".join(result)
+
 
 def vrf_encrypt(input_str: str) -> str:
     """Encrypt string using Anikoto's VRF cipher."""

@@ -1,85 +1,127 @@
-"""Full pipeline integration tests for all anime sources.
-Verifies: Search -> Details -> Episodes -> Servers -> Streams.
+"""Live end-to-end pipeline checks for every maintained anime source.
+
+Each test deliberately exercises search, details, episodes, servers, and streams.  The
+bounded fallback makes the checks resilient to an individual title or hoster rotating,
+without hiding a source-wide extraction failure.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Iterable
+from typing import Any
 
 import pytest
 
+from anime_extensions.models import Anime, Episode, Server, Stream
 from anime_extensions.sources import Anikoto, AniWaves, MKissa
 
-logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-SOURCES = [Anikoto, AniWaves, MKissa]
-TEST_QUERIES = ["One Piece", "Naruto", "Bleach", "Attack on Titan"]
+SOURCES = (Anikoto, AniWaves, MKissa)
+TEST_QUERIES = ("One Piece", "Naruto", "Bleach", "Attack on Titan")
+_MAX_ANIME_CANDIDATES = 3
+_MAX_EPISODE_CANDIDATES = 3
+_MAX_SERVER_CANDIDATES = 4
+
+
+def _bounded(items: Iterable[Any], maximum: int) -> list[Any]:
+    return list(items)[:maximum]
+
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("SourceClass", SOURCES)
-async def test_source_full_pipeline(SourceClass):
-    """Verify the full data pipeline for a source."""
-    source = SourceClass()
+@pytest.mark.live
+@pytest.mark.parametrize("source_class", SOURCES, ids=lambda source: source.id)
+async def test_source_full_pipeline(source_class: type[Any]) -> None:
+    """Return at least one usable HTTP(S) stream from every source pipeline."""
+    source = source_class()
+    diagnostics: list[str] = []
     try:
-        log.info(f"Testing full pipeline for {source.name}")
+        candidates = await _search_candidates(source, diagnostics)
+        assert candidates, f"{source.name}: no search results; {' | '.join(diagnostics)}"
 
-        # 1. Search
-        selected_anime = None
-        for query in TEST_QUERIES:
-            log.info(f"[{source.name}] Searching for '{query}'...")
-            res, _ = await source.search(query)
-            if res:
-                selected_anime = res[0]
-                log.info(f"[{source.name}] Found results for '{query}'")
-                break
+        for candidate in candidates:
+            try:
+                details = await source.get_details(candidate.id)
+                assert details.id and details.title
+            except AssertionError as error:
+                diagnostics.append(f"details({candidate.id}): {error}")
+                continue
+            except Exception as error:
+                diagnostics.append(f"details({candidate.id}): {error}")
+                continue
 
-        if not selected_anime:
-            pytest.skip(f"No results found for any test queries on {source.name}")
-            return
+            try:
+                episodes = await source.get_episodes(candidate.id)
+            except Exception as error:
+                diagnostics.append(f"episodes({candidate.id}): {error}")
+                continue
+            if not episodes:
+                diagnostics.append(f"episodes({candidate.id}): empty")
+                continue
 
-        anime = selected_anime
-        log.info(f"[{source.name}] Selected anime: {anime.title} (ID: {anime.id})")
+            streams = await _streams_from_candidate(source, episodes, diagnostics)
+            if streams:
+                _assert_playable_streams(source.name, streams)
+                log.info("%s pipeline passed with %d stream(s)", source.name, len(streams))
+                return
 
-        # 2. Details
-        log.info(f"[{source.name}] Fetching details...")
-        details = await source.get_details(anime.id)
-        assert details.id
-        assert details.title
-        log.info(f"[{source.name}] Details fetched: {details.title}")
-
-        # 3. Episodes
-        log.info(f"[{source.name}] Fetching episodes...")
-        episodes = await source.get_episodes(anime.id)
-        if not episodes:
-            pytest.skip(f"No episodes found for {anime.title} on {source.name}")
-            return
-
-        episode = episodes[0]
-        log.info(f"[{source.name}] Found episode: {episode.title} (ID: {episode.id})")
-
-        # 4. Servers
-        log.info(f"[{source.name}] Fetching servers...")
-        servers = await source.get_servers(episode.id)
-        if not servers:
-            pytest.skip(f"No servers found for episode {episode.number} on {source.name}")
-            return
-
-        server = servers[0]
-        log.info(f"[{source.name}] Found server: {server.name}")
-
-        # 5. Streams
-        log.info(f"[{source.name}] Extracting streams...")
-        streams = await source.get_streams(episode.id, server.id)
-        log.info(f"[{source.name}] Found {len(streams)} streams")
-
-        # streams are critical.
-        assert len(streams) > 0, "Streams should be available for a valid episode"
-        log.info(f"[{source.name}] Found streams: {[stream.url for stream in streams]}")
-
-        log.info(f"[{source.name}] Full pipeline test passed for {anime.title}")
-
-    except Exception as e:
-        log.exception(f"Pipeline failed for {source.name}")
-        pytest.fail(f"Full pipeline failed for {source.name}: {e}")
+        pytest.fail(f"{source.name}: no playable streams; {' | '.join(diagnostics)}")
     finally:
-        if hasattr(source, "close"):
-            await source.close()
+        await source.close()
+
+
+async def _search_candidates(source: Any, diagnostics: list[str]) -> list[Anime]:
+    candidates: list[Anime] = []
+    for query in TEST_QUERIES:
+        try:
+            results, _ = await source.search(query)
+        except Exception as error:
+            diagnostics.append(f"search({query!r}): {error}")
+            continue
+        if results:
+            candidates.extend(_bounded(results, _MAX_ANIME_CANDIDATES))
+        if len(candidates) >= _MAX_ANIME_CANDIDATES:
+            break
+    return candidates[:_MAX_ANIME_CANDIDATES]
+
+
+async def _streams_from_candidate(
+    source: Any, episodes: list[Episode], diagnostics: list[str]
+) -> list[Stream]:
+    for episode in _bounded(episodes, _MAX_EPISODE_CANDIDATES):
+        try:
+            servers = await source.get_servers(episode.id)
+        except Exception as error:
+            diagnostics.append(f"servers({episode.id!r}): {error}")
+            continue
+        if not servers:
+            diagnostics.append(f"servers({episode.id!r}): empty")
+            continue
+        streams = await _streams_from_servers(source, episode, servers, diagnostics)
+        if streams:
+            return streams
+    return []
+
+
+async def _streams_from_servers(
+    source: Any, episode: Episode, servers: list[Server], diagnostics: list[str]
+) -> list[Stream]:
+    for server in _bounded(servers, _MAX_SERVER_CANDIDATES):
+        try:
+            streams = await source.get_streams(episode.id, server.id)
+        except Exception as error:
+            diagnostics.append(f"streams({episode.number}, {server.name!r}): {error}")
+            continue
+        if streams:
+            return streams
+        diagnostics.append(f"streams({episode.number}, {server.name!r}): empty")
+    return []
+
+
+def _assert_playable_streams(source_name: str, streams: list[Stream]) -> None:
+    assert streams, f"{source_name}: stream extraction returned no streams"
+    invalid_urls = [
+        stream.url for stream in streams if not stream.url.startswith(("http://", "https://"))
+    ]
+    assert not invalid_urls, f"{source_name}: invalid stream URLs: {invalid_urls!r}"

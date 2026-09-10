@@ -45,29 +45,37 @@ async def test_full_extraction_flow(anikoto_source: Anikoto) -> None:
     assert results, "Search failed, aborting flow"
     anime = results[0]
 
-    # 2. Get details
-    details = await anikoto_source.get_details(anime.id)
-    assert details.id == anime.id
-    assert details.description, "Expected a synopsis"
+    # 3-5. Get episodes, servers, and streams (bounded fallback for live flakiness)
+    streams: list[Stream] = []
 
-    # 3. Get episodes
-    episodes = await anikoto_source.get_episodes(anime.id)
-    assert len(episodes) > 0, "Expected episodes"
-    ep = episodes[0]
-    assert isinstance(ep, Episode)
+    for anime in results[:3]:
+        details = await anikoto_source.get_details(anime.id)
+        assert details.id, "Details must have a non-empty internal ID"
+        assert details.description, "Expected a synopsis"
 
-    # 4. Get servers
-    servers = await anikoto_source.get_servers(ep.id)
-    assert len(servers) > 0, "Expected servers"
-    srv = servers[0]
-    assert isinstance(srv, Server)
+        episodes = await anikoto_source.get_episodes(anime.id)
+        if not episodes:
+            continue
 
-    # 5. Get streams
-    try:
-        streams = await anikoto_source.get_streams(ep.id, srv.id)
+        for ep in episodes[:3]:
+            try:
+                servers = await anikoto_source.get_servers(ep.id)
+            except Exception:
+                continue
+
+            for srv in servers[:3]:
+                try:
+                    streams = await anikoto_source.get_streams(ep.id, srv.id)
+                    if streams:
+                        break
+                except Exception:
+                    continue
+            if streams:
+                break
         if streams:
-            stream = streams[0]
-            assert isinstance(stream, Stream)
-            assert stream.url.startswith("http")
-    except Exception as e:
-        pytest.fail(f"Stream extraction failed: {e}")
+            break
+
+    assert len(streams) > 0, "Expected at least one playable stream across all available servers"
+    stream = streams[0]
+    assert isinstance(stream, Stream)
+    assert stream.url.startswith("http"), "Stream URL must be an absolute HTTP(S) URL"

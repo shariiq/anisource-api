@@ -1,12 +1,13 @@
 """Unit tests for MKissa cryptographic primitives."""
 
-import pytest
+import base64
 import hashlib
 import hmac
-import base64
 import json
 from unittest.mock import patch
+
 from anime_extensions.utils.mkissa_crypto import MKissaCrypto
+
 
 def test_sha256_hex():
     """Verify SHA-256 hex hashing."""
@@ -14,16 +15,17 @@ def test_sha256_hex():
     expected = hashlib.sha256(test_val.encode("utf-8")).hexdigest()
     assert MKissaCrypto.sha256_hex(test_val) == expected
 
+
 def test_derive_mask_valid():
     """Verify mask derivation with valid inputs."""
     build_id = "build123"
-    seeds = ["seed1_b64", "seed2_b64", "seed3_b64", "seed4_b64"]
     # Mock seeds to be valid base64
     valid_seeds = [base64.b64encode(b"12345678").decode() for _ in range(4)]
 
     mask = MKissaCrypto.derive_mask(build_id, valid_seeds)
     assert mask is not None
     assert len(mask) == 32
+
 
 def test_derive_mask_invalid_seeds():
     """Verify derive_mask returns None on invalid inputs."""
@@ -34,6 +36,7 @@ def test_derive_mask_invalid_seeds():
     # Empty build_id
     assert MKissaCrypto.derive_mask("", ["s1", "s2", "s3", "s4"]) is None
 
+
 def test_derive_key():
     """Verify AES key derivation (XOR of mask and partB)."""
     mask = b"A" * 32
@@ -43,6 +46,7 @@ def test_derive_key():
     assert len(key) == 32
     # XOR result should be constant
     assert key[0] == ord("A") ^ ord("B")
+
 
 def test_boot_token():
     """Verify HMAC boot token generation."""
@@ -57,11 +61,12 @@ def test_boot_token():
 
     # Manual verification
     boot_prefix = "FD0xZhgI:"
-    inner = hmac.new(mask, f"{boot_prefix}{build_id}".encode("utf-8"), hashlib.sha256).digest()
+    inner = hmac.new(mask, f"{boot_prefix}{build_id}".encode(), hashlib.sha256).digest()
     message = f"{referer_host}.{epoch}.{key_group}.{lane}.{build_id}"
     expected = hmac.new(inner, message.encode("utf-8"), hashlib.sha256).hexdigest()
 
     assert token == expected
+
 
 def test_build_aa_req_and_decrypt():
     """Verify aaReq encryption and subsequent decryption."""
@@ -83,6 +88,7 @@ def test_build_aa_req_and_decrypt():
     assert payload["qh"] == query_hash
     assert payload["k"] == lane
 
+
 def test_decrypt_source_url():
     """Verify XOR source URL decryption."""
     # Test case 1: Specific prefix '#' (keyType 0)
@@ -99,8 +105,16 @@ def test_decrypt_source_url():
     assert MKissaCrypto.decrypt_source_url(f"#{encrypted_hex}") == url
 
     # Test case 2: No prefix (try all masks)
-    assert MKissaCrypto.decrypt_source_url(f"#{encrypted_hex}") == url # should work as prefix #
-    assert MKissaCrypto.decrypt_source_url(encrypted_hex) == url # should work via trial
+    assert MKissaCrypto.decrypt_source_url(f"#{encrypted_hex}") == url  # should work as prefix #
+    assert MKissaCrypto.decrypt_source_url(encrypted_hex) == url  # should work via trial
+
+
+def test_decrypt_source_url_preserves_plain_url() -> None:
+    """Plain source URLs are not affected by frontend storage configuration."""
+    url = "https://watchanime.uns.bio/#6kxskx"
+
+    assert MKissaCrypto.decrypt_source_url(url) == url
+
 
 def test_decrypt_source_url_invalid():
     """Verify decryption failure for invalid inputs."""

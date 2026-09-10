@@ -5,15 +5,56 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
-import aiohttp
+from bs4 import BeautifulSoup
+
 from ...base import BaseSource
+from ...exceptions import CryptoError, HttpError, ParsingError
 from ...models import Anime, Episode, Server, Stream, Subtitle
 from ...utils.mkissa_crypto import MKissaCrypto
 from .key_manager import MKissaKeyManager
 
 log = logging.getLogger(__name__)
+
+STREAM_QUERY = """query(
+    $showId: String!
+    $translationType: VaildTranslationTypeEnumType!
+    $episodeString: String!
+) {
+    episode(
+        showId: $showId
+        translationType: $translationType
+        episodeString: $episodeString
+    ) {
+        sourceUrls
+        show {
+            _id
+        }
+    }
+}"""
+STREAM_HASH = MKissaCrypto.sha256_hex(STREAM_QUERY)
+ANIME_LANE = "k7"
+_PLAYER_DOMAIN = "https://allanime.day"
+_INTERNAL_HOSTER_NAMES = (
+    "Default",
+    "Ac",
+    "Ak",
+    "Kir",
+    "Rab",
+    "Luf-mp4",
+    "Si-Hls",
+    "S-mp4",
+    "Ac-Hls",
+    "Uv-mp4",
+    "Pn-Hls",
+)
+_INTERNAL_HOSTER_PATTERNS = tuple(
+    (name, re.compile(rf"\b{re.escape(name.lower())}\b")) for name in _INTERNAL_HOSTER_NAMES
+)
+
 
 class MKissa(BaseSource):
     """MKissa anime source."""
@@ -26,9 +67,10 @@ class MKissa(BaseSource):
     def __init__(self, *, session: Any = None) -> None:
         super().__init__(session=session)
         self.key_manager = MKissaKeyManager(
-            session=self._session,
+            session=session,
             site_url=self.base_url,
-            api_url=self.api_url
+            api_url=self.api_url,
+            session_factory=self._ensure_session,
         )
 
     async def _graphql_request(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -37,19 +79,18 @@ class MKissa(BaseSource):
             "query": query,
             "variables": variables,
         }
-        # Header matching Kotlin's postHeaders
         headers = {
             "Accept": "*/*",
             "Origin": "https://youtu-chan.com",
             "Referer": "https://youtu-chan.com/",
         }
 
-        status, body = await self._request(self.api_url + "/api", payload, headers=headers)
-        if status != 200:
-            log.warning(f"MKissa GraphQL request failed with status {status}")
+        try:
+            data = await self._post_json(f"{self.api_url}/api", json_data=payload, headers=headers)
+        except (HttpError, ParsingError) as error:
+            log.warning("MKissa GraphQL request failed: %s", error)
             return {}
-
-        return json.loads(body) if body else {}
+        return data if isinstance(data, dict) else {}
 
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch popular anime."""
@@ -83,7 +124,8 @@ class MKissa(BaseSource):
 
         animes = [
             self._parse_anime(rec.get("anyCard", {}))
-            for rec in recommendations if rec.get("anyCard")
+            for rec in recommendations
+            if rec.get("anyCard")
         ]
 
         has_next = len(animes) == 26
@@ -177,10 +219,7 @@ class MKissa(BaseSource):
                 thumbnail
                 description
                 type
-                season {
-                    quarter
-                    year
-                }
+                season
                 score
                 genres
                 status
@@ -193,44 +232,21 @@ class MKissa(BaseSource):
         data = await self._graphql_request(query, variables)
         show = data.get("data", {}).get("show", {})
 
-        # Handle studios list
-        studios = show.get("studios", [])
-        if isinstance(studios, dict):
-            studios = [s.get("node", {}).get("name", "") for s in studios.get("edges", []) if s.get("isMain")]
-        elif isinstance(studios, list):
-            # If it's already a list of strings (fallback)
-            pass
-        else:
-            studios = []
-
-        # Handle status
-        status_map = {
+        studios = self._parse_studios(show.get("studios"))
+        status = {
             "Releasing": "ongoing",
             "Finished": "completed",
             "Not Yet Released": "ongoing",
-        }
-        status = status_map.get(show.get("status", ""), "unknown")
-
-        # Build description
-        desc = show.get("description", "")
-        if desc:
-            # Basic HTML strip and br replacement
-            desc = desc.replace("<br>", "\n")
-            import bs4
-            desc = bs4.BeautifulSoup(desc, "html.parser").text
-
-        description = f"{desc}\n\nType: {show.get('type', 'Unknown')}\n" \
-                      f"Aired: {show.get('season', {}).get('quarter', '-') if show.get('season') else '-'} " \
-                      f"{show.get('season', {}).get('year', '-') if show.get('season') else '-'}\n" \
-                      f"Score: {show.get('score', '-') if show.get('score') else '-'}★"
+        }.get(str(show.get("status", "")), "unknown")
+        genres = show.get("genres", [])
 
         return Anime(
             id=anime_id,
-            title=show.get("name", "Unknown"),
+            title=str(show.get("name") or "Unknown"),
             url=anime_id,
-            thumbnail=show.get("thumbnail", ""),
-            description=description,
-            genres=show.get("genres", []),
+            thumbnail=str(show.get("thumbnail") or ""),
+            description=self._build_description(show),
+            genres=[str(genre) for genre in genres] if isinstance(genres, list) else [],
             studios=studios,
             status=status,
         )
@@ -241,10 +257,7 @@ class MKissa(BaseSource):
         query($_id: String!) {
             show(_id: $_id) {
                 _id
-                availableEpisodesDetail {
-                    sub
-                    dub
-                }
+                availableEpisodesDetail
             }
         }
         """
@@ -254,34 +267,50 @@ class MKissa(BaseSource):
         show = data.get("data", {}).get("show", {})
 
         eps_detail = show.get("availableEpisodesDetail", {})
-        sub_eps = eps_detail.get("sub", [])
-        dub_eps = eps_detail.get("dub", [])
-
-        episodes = []
-        # For now, prioritize subs
-        for ep_str in sub_eps:
+        if isinstance(eps_detail, str):
             try:
-                num = float(ep_str)
-            except ValueError:
-                num = 1.0
+                eps_detail = json.loads(eps_detail)
+            except json.JSONDecodeError:
+                eps_detail = {}
+        if not isinstance(eps_detail, dict):
+            return []
 
-            # Episode ID is a JSON string containing variables for stream extraction
-            ep_id = json.dumps({
-                "variables": {
-                    "showId": show.get("_id", ""),
-                    "translationType": "sub",
-                    "episodeString": ep_str,
-                }
-            })
+        show_id = show.get("_id")
+        if not isinstance(show_id, str) or not show_id:
+            return []
 
-            episodes.append(Episode(
-                id=ep_id,
-                number=num,
-                title=f"Episode {ep_str} (sub)",
-                has_sub=True,
-                has_dub=False,
-                scanlator="MKissa",
-            ))
+        episodes: list[Episode] = []
+        for translation_type in ("sub", "dub"):
+            episode_strings = eps_detail.get(translation_type, [])
+            if not isinstance(episode_strings, list):
+                continue
+            for episode_string in episode_strings:
+                if not isinstance(episode_string, str) or not episode_string:
+                    continue
+                try:
+                    number = float(episode_string)
+                except ValueError:
+                    number = 0.0
+                episode_id = json.dumps(
+                    {
+                        "variables": {
+                            "showId": show_id,
+                            "translationType": translation_type,
+                            "episodeString": episode_string,
+                        }
+                    },
+                    separators=(",", ":"),
+                )
+                episodes.append(
+                    Episode(
+                        id=episode_id,
+                        number=number,
+                        title=f"Episode {episode_string} ({translation_type})",
+                        has_sub=translation_type == "sub",
+                        has_dub=translation_type == "dub",
+                        scanlator="MKissa",
+                    )
+                )
 
         # Sort descending
         episodes.sort(key=lambda e: e.number, reverse=True)
@@ -292,133 +321,342 @@ class MKissa(BaseSource):
         return [Server(id="default", name="Default", type="sub")]
 
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
-        """Extract streams from encrypted API."""
-        ep_data = json.loads(episode_id)
-        vars_data = ep_data.get("variables", {})
-        show_id = vars_data.get("showId", "")
-        translation_type = vars_data.get("translationType", "sub")
-        episode_string = vars_data.get("episodeString", "")
-
-        # 1. Get crypto material
+        """Extract streams from MKissa's encrypted persisted-query endpoint."""
+        del server_id  # MKissa has one logical server for each episode.
         try:
-            material = await self.key_manager.get_material()
-        except Exception as e:
-            log.error(f"Crypto material failure: {e}")
+            ep_data = json.loads(episode_id)
+            variables = ep_data["variables"]
+            show_id = variables["showId"]
+            translation_type = variables["translationType"]
+            episode_string = variables["episodeString"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            log.warning("MKissa received an invalid episode identifier")
             return []
 
-        # 2. Build aaReq
-        query_hash = MKissaCrypto.sha256_hex(
-            "query(\n"
-            "    $showId: String!\n"
-            "    $translationType: VaildTranslationTypeEnumType!\n"
-            "    $episodeString: String!\n"
-            ") {\n"
-            "    episode(\n"
-            "        showId: $showId\n"
-            "        translationType: $translationType\n"
-            "        episodeString: $episodeString\n"
-            "    )\n"
-            "        {\n"
-            "            sourceUrls\n"
-            "            show {\n"
-            "                _id\n"
-            "            }\n"
-            "        }\n"
-            "}"
-        )
+        if not all(
+            isinstance(value, str) and value
+            for value in (show_id, translation_type, episode_string)
+        ):
+            return []
+        variables = {
+            "showId": show_id,
+            "translationType": translation_type,
+            "episodeString": episode_string,
+        }
 
-        # Note: the Kotlin code uses a buildQuery helper that trims and replaces % with $.
-        # The exact string must match the SHA-256 hash used by the server.
-        # Let's use the laziest approach: match the Kotlin's STREAM_QUERY string.
-        # Actually, let's just use a hardcoded hash if the server allows it.
-        # But the Kotlin code calculates it: MKissaCrypto.sha256Hex(STREAM_QUERY)
+        for attempt in range(3):
+            try:
+                material = await self.key_manager.get_material(force_refresh=attempt > 0)
+                body = await self._get_stream_response(material, variables)
+                source_urls = self._source_urls_from_response(body, material.key)
+                streams = await self._streams_from_sources(source_urls)
+                if streams:
+                    return streams
+                message = self.key_manager.api_error_message(body)
+                if message:
+                    log.warning(message)
+                    return []
+            except (
+                CryptoError,
+                HttpError,
+                ParsingError,
+                json.JSONDecodeError,
+                ValueError,
+            ) as error:
+                log.warning("MKissa stream attempt %s failed: %s", attempt + 1, error)
 
-        # Correct query for hashing
-        stream_query = (
-            "query(\n"
-            "    $showId: String!\n"
-            "    $translationType: VaildTranslationTypeEnumType!\n"
-            "    $episodeString: String!\n"
-            ") {\n"
-            "    episode(\n"
-            "        showId: $showId\n"
-            "        translationType: $translationType\n"
-            "        episodeString: $episodeString\n"
-            "    )\n"
-            "        {\n"
-            "            sourceUrls\n"
-            "            "
-            "show {\n"
-            "                _id\n"
-            "            }\n"
-            "        }\n"
-            "}"
-        ).strip()
+            self.key_manager.invalidate()
+            if attempt == 1:
+                self.key_manager.invalidate_build()
+        return []
 
-        # Let's use the hash from the Kotlin code if possible, or just try to implement a normalized form.
-        # Since we can't easily verify the hash, I'll use a placeholder and implement a robust check.
-
+    async def _get_stream_response(self, material: Any, variables: dict[str, str]) -> str:
+        """Request MKissa's APQ stream endpoint with fresh crypto metadata."""
         aa_req = MKissaCrypto.build_aa_req(
             key=material.key,
             epoch=material.epoch,
             build_id=material.build_id,
-            query_hash=query_hash,
-            lane="k7",
+            query_hash=STREAM_HASH,
+            lane=ANIME_LANE,
         )
-
+        params = {
+            "query": STREAM_QUERY,
+            "variables": json.dumps(variables, separators=(",", ":")),
+            "extensions": json.dumps(
+                {
+                    "persistedQuery": {"version": 1, "sha256Hash": STREAM_HASH},
+                    "k": ANIME_LANE,
+                    "aaReq": aa_req,
+                },
+                separators=(",", ":"),
+            ),
+        }
         headers = {
             "x-build-id": material.build_id,
             "Referer": f"{self.base_url}/",
         }
+        session = await self._ensure_session()
+        async with session.get(f"{self.api_url}/api", params=params, headers=headers) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HttpError(
+                    f"MKissa stream request failed with status {response.status}",
+                    status_code=response.status,
+                )
+            return await response.text(errors="replace")
 
-        # Request streams
-        url = f"{self.api_url}/api"
-        # The Kotlin code uses appendGraphQLParams for GET request
-        # In Python, we'll just use query params
-        params = {
-            "query": stream_query,
-            "variables": json.dumps(vars_data),
-            "extensions": json.dumps({
-                "persistedQuery": {"version": 1, "sha256Hash": query_hash},
-                "k": "k7",
-                "aaReq": aa_req,
-            })
-        }
+    @staticmethod
+    def _source_urls_from_response(body: str, key: bytes) -> list[dict[str, Any]]:
+        """Decode encrypted or direct stream data from a GraphQL response."""
+        try:
+            envelope = json.loads(body)
+        except json.JSONDecodeError as error:
+            decrypted = MKissaCrypto.decrypt(body, key)
+            if decrypted is None:
+                raise ParsingError("MKissa returned an invalid encrypted response") from error
+            envelope = json.loads(decrypted)
 
-        async with self._session.get(url, params=params, headers=headers) as resp:
-            if resp.status != 200:
-                raise HttpError(f"MKissa stream request failed with status {resp.status}", status_code=resp.status)
-            body = await resp.text()
+        data = envelope.get("data", {}) if isinstance(envelope, dict) else {}
+        encrypted = data.get("tobeparsed") if isinstance(data, dict) else None
+        if isinstance(encrypted, str):
+            decrypted = MKissaCrypto.decrypt(encrypted, key)
+            if decrypted is None:
+                raise CryptoError("MKissa stream response could not be decrypted")
+            try:
+                envelope = json.loads(decrypted)
+            except json.JSONDecodeError as error:
+                raise ParsingError("MKissa decrypted stream response is invalid JSON") from error
+            data = envelope.get("data", envelope) if isinstance(envelope, dict) else envelope
 
-        # 3. Decrypt response
-        decrypted_body = MKissaCrypto.decrypt(body, material.key)
-        if not decrypted_body:
+        episode = data.get("episode", {}) if isinstance(data, dict) else {}
+        source_urls = episode.get("sourceUrls", []) if isinstance(episode, dict) else []
+        return source_urls if isinstance(source_urls, list) else []
+
+    async def _streams_from_sources(self, source_urls: list[dict[str, Any]]) -> list[Stream]:
+        """Resolve direct, internal-player, and supported external MKissa sources."""
+        streams: list[tuple[float, Stream]] = []
+        for source in source_urls:
+            if not isinstance(source, dict):
+                continue
+
+            source_url = MKissaCrypto.decrypt_source_url(str(source.get("sourceUrl", "")))
+            source_name = str(source.get("sourceName") or "Unknown")
+            priority = self._source_priority(source.get("priority"))
+            if source_url.startswith("/apivtwo/") and self._is_internal_hoster(source_name):
+                streams.extend(
+                    (priority, stream)
+                    for stream in await self._extract_internal_source(source_url, source_name)
+                )
+                continue
+            stream = self._direct_stream(source_url, source_name, priority)
+            if stream is not None:
+                streams.append((priority, stream))
+
+        streams.sort(key=lambda item: item[0], reverse=True)
+        return [stream for _, stream in streams]
+
+    def _direct_stream(self, url: str, name: str, priority: float) -> Stream | None:
+        if url.startswith("//"):
+            url = f"https:{url}"
+        if not url.startswith(("http://", "https://")):
+            return None
+        return Stream(
+            url=url,
+            quality=f"{name} - {priority:g}",
+            headers={"Referer": f"{self.base_url}/"},
+            is_hls=".m3u8" in url or "/clock" in url,
+        )
+
+    async def _extract_internal_source(self, path: str, name: str) -> list[Stream]:
+        endpoint = f"{_PLAYER_DOMAIN}{path.replace('/clock?', '/clock.json?', 1)}"
+        try:
+            response = await self._get_json(endpoint, headers={"Referer": f"{_PLAYER_DOMAIN}/"})
+        except (HttpError, ParsingError) as error:
+            log.warning("MKissa internal source %s failed: %s", name, error)
+            return []
+        if not isinstance(response, Mapping):
             return []
 
-        data = json.loads(decrypted_body)
-        episode_obj = data.get("data", {}).get("episode", {})
-        source_urls = episode_obj.get("sourceUrls", [])
-
-        streams = []
-        for src in source_urls:
-            # Decrypt the source URL
-            decrypted_url = MKissaCrypto.decrypt_source_url(src.get("sourceUrl", ""))
-
-            streams.append(Stream(
-                url=decrypted_url,
-                quality=f"{src.get('sourceName', 'Unknown')} - {src.get('priority', 0)}",
-                headers={"Referer": f"{self.base_url}/"},
-                is_hls=True,
-            ))
-
+        streams: list[Stream] = []
+        links = response.get("links", [])
+        if not isinstance(links, list):
+            return streams
+        for link in links:
+            if not isinstance(link, Mapping):
+                continue
+            subtitles = self._parse_subtitles(link.get("subtitles"))
+            resolution = str(link.get("resolutionStr") or "Unknown")
+            url = link.get("link")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                continue
+            if link.get("mp4") is True:
+                streams.append(
+                    Stream(
+                        url=url, quality=f"Original ({name} - {resolution})", subtitles=subtitles
+                    )
+                )
+            elif link.get("hls") is True:
+                streams.append(
+                    Stream(
+                        url=url,
+                        quality=f"HLS ({name} - {resolution})",
+                        headers=self._player_headers(url),
+                        subtitles=subtitles,
+                        is_hls=True,
+                    )
+                )
+            elif link.get("dash") is True:
+                streams.extend(self._dash_streams(link, name, subtitles))
+            elif link.get("crIframe") is True:
+                streams.extend(self._cr_iframe_streams(link, subtitles))
         return streams
+
+    @staticmethod
+    def _source_priority(value: object) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _is_internal_hoster(source_name: str) -> bool:
+        normalized = source_name.lower()
+        return any(pattern.search(normalized) for _, pattern in _INTERNAL_HOSTER_PATTERNS)
+
+    @staticmethod
+    def _parse_subtitles(value: object) -> list[Subtitle]:
+        if not isinstance(value, list):
+            return []
+        subtitles: list[Subtitle] = []
+        for subtitle in value:
+            if not isinstance(subtitle, Mapping):
+                continue
+            url = subtitle.get("src")
+            language = subtitle.get("lang")
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                subtitles.append(
+                    Subtitle(
+                        url=url,
+                        label=str(subtitle.get("label") or ""),
+                        language=str(language or ""),
+                    )
+                )
+        return subtitles
+
+    @staticmethod
+    def _player_headers(url: str) -> dict[str, str]:
+        host = urlparse(url).netloc
+        return {
+            "Accept": "*/*",
+            "Host": host,
+            "Origin": _PLAYER_DOMAIN,
+            "Referer": f"{_PLAYER_DOMAIN}/",
+        }
+
+    @staticmethod
+    def _dash_streams(
+        link: Mapping[str, object], name: str, subtitles: list[Subtitle]
+    ) -> list[Stream]:
+        raw_urls = link.get("rawUrls")
+        if not isinstance(raw_urls, Mapping):
+            return []
+        streams: list[Stream] = []
+        for video in raw_urls.get("vids", []):
+            if not isinstance(video, Mapping):
+                continue
+            url = video.get("url")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                continue
+            height = video.get("height")
+            streams.append(
+                Stream(
+                    url=url,
+                    quality=f"{name} - {height or 'DASH'}",
+                    headers={"Accept": "*/*"},
+                    subtitles=subtitles,
+                )
+            )
+        return streams
+
+    @staticmethod
+    def _cr_iframe_streams(link: Mapping[str, object], subtitles: list[Subtitle]) -> list[Stream]:
+        port_data = link.get("portData")
+        streams_data = port_data.get("streams", []) if isinstance(port_data, Mapping) else []
+        if not isinstance(streams_data, list):
+            return []
+        streams: list[Stream] = []
+        for stream in streams_data:
+            if not isinstance(stream, Mapping):
+                continue
+            url = stream.get("url")
+            format_name = stream.get("format")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                continue
+            if format_name == "adaptive_dash":
+                streams.append(
+                    Stream(
+                        url=url,
+                        quality="Original (AC - DASH)",
+                        subtitles=subtitles,
+                    )
+                )
+            elif format_name == "adaptive_hls":
+                streams.append(
+                    Stream(
+                        url=url,
+                        quality="Original (AC - HLS)",
+                        headers={"Referer": f"{_PLAYER_DOMAIN}/"},
+                        subtitles=subtitles,
+                        is_hls=True,
+                    )
+                )
+        return streams
+
+    @staticmethod
+    def _parse_studios(value: object) -> list[str]:
+        if isinstance(value, list):
+            return [studio for item in value if (studio := str(item))]
+        if not isinstance(value, Mapping):
+            return []
+        edges = value.get("edges", [])
+        if not isinstance(edges, list):
+            return []
+        studios: list[str] = []
+        for edge in edges:
+            if not isinstance(edge, Mapping) or not edge.get("isMain"):
+                continue
+            node = edge.get("node")
+            if isinstance(node, Mapping) and isinstance(name := node.get("name"), str) and name:
+                studios.append(name)
+        return studios
+
+    @staticmethod
+    def _build_description(show: Mapping[str, object]) -> str:
+        raw_description = show.get("description")
+        description = ""
+        if isinstance(raw_description, str):
+            description = BeautifulSoup(
+                raw_description.replace("<br>", "\n"), "html.parser"
+            ).get_text()
+        season = show.get("season") or "-"
+        if isinstance(season, Mapping):
+            season = (
+                " ".join(str(part) for part in (season.get("quarter"), season.get("year")) if part)
+                or "-"
+            )
+        score = show.get("score") or "-"
+        return f"{description}\n\nType: {show.get('type') or 'Unknown'}\nAired: {season}\nScore: {score}★"
 
     def _parse_anime(self, media: dict) -> Anime:
         """Parse media object into Anime model."""
         anime_id = media.get("_id", "")
         title_obj = media.get("name", "")
         if isinstance(title_obj, dict):
-            title = title_obj.get("userPreferred") or title_obj.get("romaji") or title_obj.get("english") or "Unknown"
+            title = (
+                title_obj.get("userPreferred")
+                or title_obj.get("romaji")
+                or title_obj.get("english")
+                or "Unknown"
+            )
         else:
             title = title_obj
 

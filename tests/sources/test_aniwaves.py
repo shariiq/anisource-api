@@ -63,14 +63,14 @@ def test_parse_listing_prefers_japanese_title_and_detects_pagination(source: Ani
     assert isinstance(animes[0], Anime)
     assert animes[0].id == "one-piece"
     assert animes[0].title == "One Piece JP"
-    assert animes[0].url == "/watch/one-piece"
+    assert animes[0].url == "https://aniwaves.example/watch/one-piece"
     assert animes[0].thumbnail == "https://img.example/one-piece.jpg"
 
 
 @pytest.mark.asyncio
 async def test_get_details_parses_metadata(source: AniWaves):
     """Test detail page metadata and canonical source identifier."""
-    source._request = AsyncMock(return_value=(200, DETAILS_HTML))
+    source._request = AsyncMock(return_value=DETAILS_HTML)
 
     anime = await source.get_details("naruto")
 
@@ -89,7 +89,7 @@ async def test_get_details_parses_metadata(source: AniWaves):
 @pytest.mark.asyncio
 async def test_get_episodes_reverses_site_order_and_builds_ids(source: AniWaves):
     """Test episode flags, fallback title, and ID construction."""
-    source._get_json = AsyncMock(return_value=(200, {"result": EPISODES_HTML}))
+    source._get_json = AsyncMock(return_value={"result": EPISODES_HTML})
 
     episodes = await source.get_episodes("/watch/naruto#internal-42")
 
@@ -104,11 +104,12 @@ async def test_get_episodes_reverses_site_order_and_builds_ids(source: AniWaves)
 @pytest.mark.asyncio
 async def test_get_servers_normalizes_names_and_types(source: AniWaves):
     """Test server filtering and Sub/Dub type normalization."""
-    source._get_json = AsyncMock(return_value=(200, {"result": SERVERS_HTML}))
+    source._get_json = AsyncMock(return_value={"result": SERVERS_HTML})
 
     servers = await source.get_servers("id-one&epurl=/watch/naruto/ep-1")
 
     assert [server.id for server in servers] == ["s1", "s2"]
+
     assert isinstance(servers[0], Server)
     assert servers[0].name == "Vidplay"
     assert servers[0].type == "sub"

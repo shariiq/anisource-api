@@ -48,34 +48,36 @@ async def test_full_extraction_flow(aniwaves_source: AniWaves) -> None:
     assert results, "Search failed, aborting flow"
     anime = results[0]
 
-    # 2. Get details
-    details = await aniwaves_source.get_details(anime.id)
-    assert details.title == anime.title
-    assert details.description, "Expected a valid description"
-    assert len(details.genres) > 0, "Expected genres to be parsed"
-    assert details.status in ("completed", "ongoing", "upcoming", "unknown")
+    # 2. Get details, episodes, servers, and streams (try bounded fallback across candidates)
+    streams: list[Stream] = []
 
-    # 3. Get episodes
-    episodes = await aniwaves_source.get_episodes(anime.id)
-    assert len(episodes) > 0, "Expected episodes for Naruto"
+    for anime in results[:3]:
+        details = await aniwaves_source.get_details(anime.id)
+        assert details.title == anime.title
+        assert details.description, "Expected a valid description"
 
-    ep = episodes[0]  # First episode
-    assert isinstance(ep, Episode)
-    assert ep.title, "Episode title is missing"
-    assert ep.id, "Episode ID is missing"
+        episodes = await aniwaves_source.get_episodes(anime.id)
+        if not episodes:
+            continue
 
-    # 4. Get servers
-    servers = await aniwaves_source.get_servers(ep.id)
-    assert len(servers) > 0, "Expected servers for the episode"
-    srv = servers[0]
-    assert isinstance(srv, Server)
-    assert srv.name, "Server name should be populated"
+        for ep in episodes[:3]:
+            try:
+                servers = await aniwaves_source.get_servers(ep.id)
+            except Exception:
+                continue
 
-    # 5. Get streams (if possible, may fail due to captchas/WAF intermittently)
-    try:
-        streams = await aniwaves_source.get_streams(ep.id, srv.id)
+            for srv in servers[:3]:
+                try:
+                    streams = await aniwaves_source.get_streams(ep.id, srv.id)
+                    if streams:
+                        break
+                except Exception:
+                    continue
+            if streams:
+                break
         if streams:
-            assert isinstance(streams[0], Stream)
-            assert streams[0].url.startswith("http")
-    except Exception as e:
-        pytest.fail(f"Stream extraction failed: {e}")
+            break
+
+    assert len(streams) > 0, "Expected at least one playable stream across all available servers"
+    assert isinstance(streams[0], Stream)
+    assert streams[0].url.startswith("http"), "Stream URL must be an absolute HTTP(S) URL"

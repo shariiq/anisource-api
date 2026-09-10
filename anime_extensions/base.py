@@ -9,8 +9,8 @@ from typing import Any
 
 import aiohttp
 
-from .models import Anime, Episode, Server, Stream
 from .exceptions import HttpError, ParsingError
+from .models import Anime, Episode, Server, Stream
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ class BaseSource(ABC):
                 connector=connector,
                 headers=self._headers,
             )
+            self._own_session = True
         return self._session
 
     async def __aenter__(self) -> BaseSource:
@@ -62,6 +63,14 @@ class BaseSource(ABC):
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        """Close the source-owned HTTP session, if one exists.
+
+        Sessions supplied by callers are never closed by a source, because their
+        lifecycle belongs to the caller (for example, ``SourceManager``).
+        """
         if self._own_session and self._session and not self._session.closed:
             await self._session.close()
             self._session = None
@@ -81,7 +90,9 @@ class BaseSource(ABC):
 
         async with session.get(url, headers=final_headers, params=params) as response:
             if response.status < 200 or response.status >= 300:
-                raise HttpError(f"GET {url} failed with status {response.status}", status_code=response.status)
+                raise HttpError(
+                    f"GET {url} failed with status {response.status}", status_code=response.status
+                )
 
             body = await response.text(errors="replace")
             return body
@@ -101,12 +112,14 @@ class BaseSource(ABC):
 
         async with session.get(url, headers=final_headers, params=params) as response:
             if response.status < 200 or response.status >= 300:
-                raise HttpError(f"GET JSON {url} failed with status {response.status}", status_code=response.status)
+                raise HttpError(
+                    f"GET JSON {url} failed with status {response.status}",
+                    status_code=response.status,
+                )
             try:
-                data = await response.json(content_type=None)
-            except Exception:
-                raise ParsingError(f"Failed to decode JSON response from {url}")
-            return data
+                return await response.json(content_type=None)
+            except (aiohttp.ContentTypeError, ValueError) as error:
+                raise ParsingError(f"Failed to decode JSON response from {url}") from error
 
     async def _post_json(
         self,
@@ -129,12 +142,14 @@ class BaseSource(ABC):
             params=params,
         ) as response:
             if response.status < 200 or response.status >= 300:
-                raise HttpError(f"POST JSON {url} failed with status {response.status}", status_code=response.status)
+                raise HttpError(
+                    f"POST JSON {url} failed with status {response.status}",
+                    status_code=response.status,
+                )
             try:
-                data = await response.json(content_type=None)
-            except Exception:
-                raise ParsingError(f"Failed to decode JSON response from {url}")
-            return data
+                return await response.json(content_type=None)
+            except (aiohttp.ContentTypeError, ValueError) as error:
+                raise ParsingError(f"Failed to decode JSON response from {url}") from error
 
     # === Abstract Methods ===
 

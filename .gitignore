@@ -59,6 +59,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Local Claude Code state
+.claude/
+
 # IDE / Editor
 .vscode/
 .idea/

@@ -7,58 +7,12 @@ import contextlib
 import re
 from datetime import datetime
 from typing import Any
-from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
 from ...base import BaseSource
 from ...models import Anime, Episode, Server, Stream, Subtitle
-
-# === VRF Encryption (inline, no external module) ===
-
-_EXCHANGE_KEY_1 = ["AP6GeR8H0lwUz1", "UAz8Gwl10P6ReH"]
-_KEY_1 = "ItFKjuWokn4ZpB"
-_KEY_2 = "fOyt97QWFB3"
-_EXCHANGE_KEY_2 = ["1majSlPQd2M5", "da1l2jSmP5QM"]
-_EXCHANGE_KEY_3 = ["CPYvHj09Au3", "0jHA9CPYu3v"]
-_KEY_3 = "736y1uTJpBLUX"
-
-
-def _rc4_encrypt(key: str, data: str) -> str:
-    """RC4 stream cipher."""
-    key_bytes = key.encode("utf-8")
-    data_bytes = data.encode("utf-8")
-
-    S = list(range(256))
-    j = 0
-    for i in range(256):
-        j = (j + S[i] + key_bytes[i % len(key_bytes)]) % 256
-        S[i], S[j] = S[j], S[i]
-
-    out = bytearray(len(data_bytes))
-    i = 0
-    j = 0
-    for idx, byte in enumerate(data_bytes):
-        i = (i + 1) % 256
-        j = (j + S[i]) % 256
-        S[i], S[j] = S[j], S[i]
-        out[idx] = byte ^ S[(S[i] + S[j]) % 256]
-
-    return base64.urlsafe_b64encode(out).decode("utf-8").rstrip("=")
-
-
-def _exchange(input_str: str, keys: list[str]) -> str:
-    """Character substitution."""
-    key1, key2 = keys[0], keys[1]
-    result = []
-    for ch in input_str:
-        idx = key1.find(ch)
-        result.append(key2[idx] if idx != -1 else ch)
-    return "".join(result)
-
-
 from ...utils.crypto import vrf_encrypt
-
 
 # === Anikoto Source ===
 
@@ -461,7 +415,7 @@ class Anikoto(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        status, data = await self._get_json(ajax_url, headers=headers, params={"get": server_id})
+        data = await self._get_json(ajax_url, headers=headers, params={"get": server_id})
         if not isinstance(data, dict):
             return None
 
@@ -484,8 +438,8 @@ class Anikoto(BaseSource):
             "Referer": f"{self.base_url}/",
         }
 
-        status, body = await self._request(embed_url, headers=headers)
-        if status != 200:
+        body = await self._request(embed_url, headers=headers)
+        if not body:
             return []
 
         # Try to find data-id for API extraction
@@ -555,8 +509,8 @@ class Anikoto(BaseSource):
 
         api_url = f"https://{host}/stream/getSources?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
         try:
-            status, resp_data = await self._get_json(api_url, headers=api_headers)
-            if status == 200 and isinstance(resp_data, dict):
+            resp_data = await self._get_json(api_url, headers=api_headers)
+            if isinstance(resp_data, dict):
                 src = resp_data.get("sources")
                 # Valid if it's a dict with file or a valid list/string URL
                 if (
@@ -572,8 +526,8 @@ class Anikoto(BaseSource):
         if data is None:
             api_url = f"https://{host}/stream/getSourcesNew?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
             try:
-                status, resp_data = await self._get_json(api_url, headers=api_headers)
-                if status == 200 and isinstance(resp_data, dict):
+                resp_data = await self._get_json(api_url, headers=api_headers)
+                if isinstance(resp_data, dict):
                     data = resp_data
             except Exception:
                 data = None
@@ -619,9 +573,9 @@ class Anikoto(BaseSource):
     ) -> list[Stream]:
         """Fetch sources from a page that may contain m3u8."""
         headers = {"Referer": referer}
-        status, body = await self._request(url, headers=headers)
+        body = await self._request(url, headers=headers)
 
-        if status != 200:
+        if not body:
             raise Exception("Page fetch failed")
 
         # Check if it's directly an m3u8
@@ -650,8 +604,6 @@ class Anikoto(BaseSource):
         server_id: str,
     ) -> list[Stream]:
         """Extract from Mewcdn player."""
-        import base64
-
         # Extract fragment from URL
         fragment = ""
         if "#" in embed_url:
@@ -671,10 +623,14 @@ class Anikoto(BaseSource):
 
         # Fetch page to get host map
         headers = {"Referer": f"{self.base_url}/"}
-        status, body = await self._request(embed_url, headers=headers)
+
+        try:
+            body = await self._request(embed_url, headers=headers)
+        except Exception:
+            body = ""
 
         host_map = {}
-        if status == 200:
+        if body:
             host_map = self._parse_host_map(body)
 
         # Apply host map
@@ -714,8 +670,9 @@ class Anikoto(BaseSource):
             "Referer": referer,
         }
 
-        status, body = await self._request(m3u8_url, headers=headers)
-        if status != 200:
+        try:
+            body = await self._request(m3u8_url, headers=headers)
+        except Exception:
             return []
 
         streams = []
@@ -725,6 +682,16 @@ class Anikoto(BaseSource):
             return []
 
         lines = body.split("\n")
+        if not any(line.lstrip().startswith("#EXT-X-STREAM-INF:") for line in lines):
+            return [
+                Stream(
+                    url=m3u8_url,
+                    quality="HLS",
+                    headers={"Referer": referer},
+                    subtitles=subtitles,
+                )
+            ]
+
         i = 0
         while i < len(lines):
             line = lines[i].strip()

@@ -7,7 +7,6 @@ import hashlib
 import hmac
 import json
 import time
-from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -20,11 +19,13 @@ XOR_KEYS = [
     "feqx1",
 ]
 
+
 def _compute_mask(key: str) -> int:
     mask = 0
     for char in key:
         mask ^= ord(char)
     return mask
+
 
 XOR_MASKS = [_compute_mask(key) for key in XOR_KEYS]
 
@@ -35,8 +36,11 @@ IV_SIZE = 12
 HEADER_SIZE = 1 + IV_SIZE  # 1 byte version + 12 bytes IV
 TAG_LENGTH = 16  # 128 bits / 8
 
+
 class MKissaCrypto:
     """Low-level cryptographic utilities for MKissa."""
+
+    SEED_COUNT = 4
 
     @staticmethod
     def sha256_hex(value: str) -> str:
@@ -44,7 +48,14 @@ class MKissaCrypto:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
     @staticmethod
-    def derive_mask(build_id: str, seeds: list[str]) -> bytes | None:
+    def derive_mask(
+        build_id: str,
+        seeds: list[str],
+        salt_mul: int = 6,
+        salt_add: int = 244,
+        frag_mul: int = 190,
+        frag_add: int = 88,
+    ) -> bytes | None:
         """
         Derive the crypto mask from build_id and seeds.
 
@@ -61,8 +72,6 @@ class MKissaCrypto:
         if not build_id or len(seeds) != 4:
             return None
 
-        salt_mul, salt_add = 6, 244
-        frag_mul, frag_add = 190, 88
         key_size = 32
         seed_size = key_size // 4
 
@@ -86,9 +95,9 @@ class MKissaCrypto:
             base = index * seed_size
             for offset in range(seed_size):
                 val = (
-                    (seed_bytes[offset] & 0xFF) ^
-                    (stream[base + offset] & 0xFF) ^
-                    ((index * frag_mul + offset * frag_add) & 0xFF)
+                    (seed_bytes[offset] & 0xFF)
+                    ^ (stream[base + offset] & 0xFF)
+                    ^ ((index * frag_mul + offset * frag_add) & 0xFF)
                 )
                 mask[base + offset] = val & 0xFF
 
@@ -106,19 +115,38 @@ class MKissaCrypto:
         return bytes(key_bytes)
 
     @staticmethod
-    def boot_token(mask: bytes, build_id: str, epoch: int, key_group: str, referer_host: str, lane: str) -> str:
+    def boot_token(
+        mask: bytes,
+        build_id: str,
+        epoch: int,
+        key_group: str,
+        referer_host: str,
+        lane: str,
+        boot_prefix: str = "FD0xZhgI:",
+        join_char: str = ".",
+        parts: tuple[str, ...] | None = None,
+    ) -> str:
         """
         Generate a boot token for the handshake.
 
-        Matches Kotlin:
-        inner = hmac(mask, "FD0xZhgI:" + buildId)
-        message = refererHost + "." + epoch + "." + keyGroup + "." + lane + "." + buildId
-        return hmac(inner, message).toHex()
+        When ``parts`` is provided, the message is assembled from the config's
+        declared part order; otherwise it falls back to the old fixed order:
+        ``refererHost.epoch.keyGroup.lane.buildId``.
         """
-        boot_prefix = "FD0xZhgI:"
-        inner = hmac.new(mask, f"{boot_prefix}{build_id}".encode("utf-8"), HMAC_ALGO).digest()
+        inner = hmac.new(mask, f"{boot_prefix}{build_id}".encode(), HMAC_ALGO).digest()
 
-        message = f"{referer_host}.{epoch}.{key_group}.{lane}.{build_id}"
+        if parts:
+            part_values: dict[str, str] = {
+                "lane": lane,
+                "epoch": str(epoch),
+                "group": key_group,
+                "host": referer_host,
+                "buildId": build_id,
+            }
+            message = join_char.join(part_values.get(p, p) for p in parts)
+        else:
+            message = f"{referer_host}{join_char}{epoch}{join_char}{key_group}{join_char}{lane}{join_char}{build_id}"
+
         return hmac.new(inner, message.encode("utf-8"), HMAC_ALGO).hexdigest()
 
     @staticmethod
@@ -180,14 +208,6 @@ class MKissaCrypto:
     def decrypt_source_url(url: str) -> str:
         """
         Decrypt obfuscated source URLs.
-
-        Matches Kotlin:
-        if startWith("--") -> keyType = 3
-        if startWith("#-") -> keyType = 2
-        if startWith("##") -> keyType = 1
-        if startWith("-#") -> keyType = 4
-        if startWith("#") -> keyType = 0
-        else -> keyType = null (try all masks)
         """
         if url.startswith("--"):
             payload, key_type = url[2:], 3

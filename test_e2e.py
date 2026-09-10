@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+
 import pytest
 
 from anime_extensions import Anikoto

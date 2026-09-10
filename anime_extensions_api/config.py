@@ -12,13 +12,13 @@ class CacheSettings:
     """Cache duration settings in seconds for various endpoints."""
 
     enabled: bool = True
-    popular_ttl_seconds: int = 1800      # 30 minutes
-    latest_ttl_seconds: int = 600        # 10 minutes
-    search_ttl_seconds: int = 1800       # 30 minutes
-    details_ttl_seconds: int = 3600      # 1 hour
-    episodes_ttl_seconds: int = 1800     # 30 minutes
-    servers_ttl_seconds: int = 600       # 10 minutes
-    streams_ttl_seconds: int = 300       # 5 minutes (streams/tokens expire quickly)
+    popular_ttl_seconds: int = 1800  # 30 minutes
+    latest_ttl_seconds: int = 600  # 10 minutes
+    search_ttl_seconds: int = 1800  # 30 minutes
+    details_ttl_seconds: int = 3600  # 1 hour
+    episodes_ttl_seconds: int = 1800  # 30 minutes
+    servers_ttl_seconds: int = 600  # 10 minutes
+    streams_ttl_seconds: int = 300  # 5 minutes (streams/tokens expire quickly)
     max_items: int = 5000
 
 
@@ -54,6 +54,7 @@ class APISettings:
     @classmethod
     def from_env(cls) -> APISettings:
         """Create settings instance populated from environment variables."""
+
         def get_bool(key: str, default: bool) -> bool:
             val = os.getenv(key)
             if val is None:

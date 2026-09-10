@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from typing import Any
-from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
@@ -126,12 +126,14 @@ class AniWaves(BaseSource):
 
             anime_id = url_path.split("/watch/")[-1] if "/watch/" in url_path else url_path
 
-            animes.append(Anime(
-                id=anime_id,
-                title=title,
-                url=url_path,
-                thumbnail=thumbnail,
-            ))
+            animes.append(
+                Anime(
+                    id=anime_id,
+                    title=title,
+                    url=url_path,
+                    thumbnail=thumbnail,
+                )
+            )
 
         # Check pagination
         has_next = len(soup.select("nav > ul.pagination > li.active ~ li")) > 0
@@ -143,10 +145,7 @@ class AniWaves(BaseSource):
     async def get_details(self, anime_id: str) -> Anime:
         """Get full anime details."""
         clean_id = anime_id.split("#")[0].strip("/")
-        if not clean_id.startswith("watch/"):
-            anime_path = f"/watch/{clean_id}"
-        else:
-            anime_path = f"/{clean_id}"
+        anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
 
         url = f"{self.base_url}{anime_path}"
         status, html = await self._request(url)
@@ -203,10 +202,8 @@ class AniWaves(BaseSource):
                 span = div.select_one("span")
                 if span:
                     score_text = span.get_text(strip=True).split()[0]
-                    try:
+                    with contextlib.suppress(ValueError):
                         score = float(score_text)
-                    except ValueError:
-                        pass
                 break
 
         # Determine status
@@ -312,13 +309,15 @@ class AniWaves(BaseSource):
             except ValueError:
                 ep_number = 0.0
 
-            episodes.append(Episode(
-                id=ep_id,
-                number=ep_number,
-                title=title,
-                has_sub=has_sub,
-                has_dub=has_dub,
-            ))
+            episodes.append(
+                Episode(
+                    id=ep_id,
+                    number=ep_number,
+                    title=title,
+                    has_sub=has_sub,
+                    has_dub=has_dub,
+                )
+            )
 
         return list(reversed(episodes))
 
@@ -364,11 +363,13 @@ class AniWaves(BaseSource):
 
                 server_name = self._normalize_server_name(raw_name)
 
-                servers.append(Server(
-                    id=server_id,
-                    name=server_name,
-                    type=video_type,
-                ))
+                servers.append(
+                    Server(
+                        id=server_id,
+                        name=server_name,
+                        type=video_type,
+                    )
+                )
 
         return servers
 
@@ -450,7 +451,9 @@ class AniWaves(BaseSource):
             log.warning("Dood extraction failed for %s: %s", embed_url, e)
             return []
 
-    async def _extract_from_byse(self, embed_url: str, label_prefix: str, episode_id: str) -> list[Stream]:
+    async def _extract_from_byse(
+        self, embed_url: str, label_prefix: str, episode_id: str
+    ) -> list[Stream]:
         """Extract from BYFMS/Filemoon (Byse system)."""
         # Build ep URL for referer
         ep_url = ""

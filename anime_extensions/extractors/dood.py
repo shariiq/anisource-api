@@ -10,7 +10,6 @@ import time
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
 from bs4 import BeautifulSoup
 
 from ..base import BaseExtractor
@@ -52,7 +51,11 @@ class DoodExtractor(BaseExtractor):
             quality_match = re.search(r"(\d{3,4}p)", title_text)
             extracted_quality = quality_match.group(1) if quality_match else "1080p"
 
-            label = f"{quality_prefix} - Doodstream {extracted_quality}" if quality_prefix else f"Doodstream {extracted_quality}"
+            label = (
+                f"{quality_prefix} - Doodstream {extracted_quality}"
+                if quality_prefix
+                else f"Doodstream {extracted_quality}"
+            )
 
             # 3. Get MD5 pass path
             md5_match = re.search(r"/pass_md5/[^'\"&?]+", text)
@@ -75,7 +78,9 @@ class DoodExtractor(BaseExtractor):
                 return []
 
             # 5. Build final video URL
-            random_str = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
+            random_str = "".join(
+                secrets.choice(string.ascii_letters + string.digits) for _ in range(10)
+            )
             expiry = int(time.time() * 1000)
             final_url = f"{video_url_start}{random_str}?token={token}&expiry={expiry}"
 

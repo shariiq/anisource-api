@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import time
-from typing import Any
 
 from fastapi import APIRouter
 
@@ -33,6 +31,7 @@ async def health_check() -> HealthCheckResponse:
     memory_mb = 0.0
     try:
         import resource  # Available on Unix/POSIX
+
         memory_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
     except ImportError:
         # Fallback on Windows/other platforms
@@ -57,9 +56,7 @@ async def health_check() -> HealthCheckResponse:
             pmc = PROCESS_MEMORY_COUNTERS()
             pmc.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
             handle = ctypes.windll.kernel32.GetCurrentProcess()
-            if ctypes.windll.psapi.GetProcessMemoryInfo(
-                handle, ctypes.byref(pmc), pmc.cb
-            ):
+            if ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(pmc), pmc.cb):
                 memory_mb = pmc.WorkingSetSize / (1024 * 1024)
         except Exception:
             memory_mb = 0.0

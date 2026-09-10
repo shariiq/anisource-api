@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Mapping
+from collections.abc import Mapping
 from urllib.parse import urljoin
 
 import m3u8
@@ -47,6 +47,7 @@ def absolutize_m3u8_urls(text: str, base_url: str) -> str:
     for line in text.splitlines():
         trimmed = line.strip()
         if trimmed.startswith("#EXT-X-KEY") or trimmed.startswith("#EXT-X-MAP"):
+
             def replace_uri(m: re.Match[str]) -> str:
                 return f'URI="{urljoin(base_url, m.group(1))}"'
 

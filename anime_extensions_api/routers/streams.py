@@ -61,7 +61,9 @@ async def get_servers(
 async def get_streams(
     source_id: str,
     episode_id: str,
-    server_id: str = Query(..., description="Server identifier obtained from the /servers endpoint."),
+    server_id: str = Query(
+        ..., description="Server identifier obtained from the /servers endpoint."
+    ),
 ) -> list[StreamSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()

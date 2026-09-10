@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import aiohttp
 

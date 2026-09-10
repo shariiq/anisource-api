@@ -8,10 +8,8 @@ import secrets
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
-
 from ..base import BaseExtractor
-from ..exceptions import CryptoError, ExtractorError
+from ..exceptions import ExtractorError
 from ..models import Stream, Subtitle
 from ..utils.crypto import (
     b64url_encode,
@@ -34,6 +32,7 @@ class ByseExtractor(BaseExtractor):
 
     def _build_fingerprint(self) -> dict[str, Any]:
         """Construct the client fingerprint payload matching Kotlin ByseExtractor."""
+
         def random_hash() -> str:
             return b64url_encode(secrets.token_bytes(32))
 
@@ -128,12 +127,14 @@ class ByseExtractor(BaseExtractor):
 
         gate_origin_host = urlparse(embed_origin).netloc if embed_origin else parsed_url.netloc
         gate_headers = dict(base_headers)
-        gate_headers.update({
-            "Cookie": f"byse_viewer_id={attest['viewer_id']}; byse_device_id={attest['device_id']}",
-            "X-Embed-Origin": gate_origin_host,
-            "X-Embed-Referer": embed_parent or embed_url,
-            "X-Embed-Parent": embed_parent or embed_url,
-        })
+        gate_headers.update(
+            {
+                "Cookie": f"byse_viewer_id={attest['viewer_id']}; byse_device_id={attest['device_id']}",
+                "X-Embed-Origin": gate_origin_host,
+                "X-Embed-Referer": embed_parent or embed_url,
+                "X-Embed-Parent": embed_parent or embed_url,
+            }
+        )
 
         # 3. Captcha challenge
         captcha_url = f"{origin}/api/videos/{media_id}/embed/captcha"
@@ -206,12 +207,18 @@ class ByseExtractor(BaseExtractor):
                 continue
 
             src_label = src.get("label")
-            prefix = f"{label_prefix} - {src_label}" if label_prefix and src_label else (label_prefix or src_label or "")
+            prefix = (
+                f"{label_prefix} - {src_label}"
+                if label_prefix and src_label
+                else (label_prefix or src_label or "")
+            )
 
             # If it's an m3u8 playlist, parse it
             if ".m3u8" in src_url:
                 try:
-                    async with session.get(src_url, headers={"Referer": video_referer, "User-Agent": USER_AGENT}) as hls_resp:
+                    async with session.get(
+                        src_url, headers={"Referer": video_referer, "User-Agent": USER_AGENT}
+                    ) as hls_resp:
                         if hls_resp.status == 200:
                             hls_text = await hls_resp.text(errors="replace")
                             parsed_streams = parse_m3u8_streams(
@@ -219,7 +226,10 @@ class ByseExtractor(BaseExtractor):
                                 src_url,
                                 referer=video_referer,
                                 subtitles=subtitles,
-                                default_headers={"User-Agent": USER_AGENT, "Referer": video_referer},
+                                default_headers={
+                                    "User-Agent": USER_AGENT,
+                                    "Referer": video_referer,
+                                },
                                 label_prefix=prefix,
                             )
                             streams.extend(parsed_streams)

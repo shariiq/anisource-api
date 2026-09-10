@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import re
 from datetime import datetime
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
@@ -71,6 +72,7 @@ def vrf_encrypt(input_str: str) -> str:
 
 
 # === Anikoto Source ===
+
 
 class Anikoto(BaseSource):
     """Anikoto anime source."""
@@ -142,12 +144,14 @@ class Anikoto(BaseSource):
 
             anime_id = url_path.split("/watch/")[-1] if "/watch/" in url_path else url_path
 
-            animes.append(Anime(
-                id=anime_id,
-                title=final_title,
-                url=url_path,
-                thumbnail=thumbnail,
-            ))
+            animes.append(
+                Anime(
+                    id=anime_id,
+                    title=final_title,
+                    url=url_path,
+                    thumbnail=thumbnail,
+                )
+            )
 
         # Check pagination
         pagination = soup.select_one("ul.pagination")
@@ -169,10 +173,7 @@ class Anikoto(BaseSource):
     async def get_details(self, anime_id: str) -> Anime:
         """Get full anime details."""
         clean_id = anime_id.split("#")[0].strip("/")
-        if not clean_id.startswith("watch/"):
-            anime_path = f"/watch/{clean_id}"
-        else:
-            anime_path = f"/{clean_id}"
+        anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
 
         url = f"{self.base_url}{anime_path}"
         status, html = await self._request(url)
@@ -229,7 +230,11 @@ class Anikoto(BaseSource):
                     status_div = div
                     break
             if status_div:
-                status_text = status_div.select_one("span").get_text(strip=True).lower() if status_div.select_one("span") else ""
+                status_text = (
+                    status_div.select_one("span").get_text(strip=True).lower()
+                    if status_div.select_one("span")
+                    else ""
+                )
 
             # MAL Score
             mal_div = None
@@ -240,10 +245,8 @@ class Anikoto(BaseSource):
             if mal_div:
                 span = mal_div.select_one("span")
                 if span:
-                    try:
+                    with contextlib.suppress(ValueError):
                         score = float(span.get_text(strip=True))
-                    except ValueError:
-                        pass
 
         # Determine status
         anime_status = "unknown"
@@ -342,10 +345,8 @@ class Anikoto(BaseSource):
             released_at = None
             timestamp = a.get("data-timestamp", "")
             if timestamp and timestamp.isdigit():
-                try:
+                with contextlib.suppress(ValueError, OSError):
                     released_at = datetime.fromtimestamp(int(timestamp))
-                except (ValueError, OSError):
-                    pass
 
             # Build episode ID
             clean_path = re.sub(r"/ep-\d+$", "", anime_path)
@@ -356,15 +357,17 @@ class Anikoto(BaseSource):
             except ValueError:
                 ep_number = 0.0
 
-            episodes.append(Episode(
-                id=ep_id,
-                number=ep_number,
-                title=title,
-                is_filler=is_filler,
-                has_sub=has_sub,
-                has_dub=has_dub,
-                released_at=released_at,
-            ))
+            episodes.append(
+                Episode(
+                    id=ep_id,
+                    number=ep_number,
+                    title=title,
+                    is_filler=is_filler,
+                    has_sub=has_sub,
+                    has_dub=has_dub,
+                    released_at=released_at,
+                )
+            )
 
         return list(reversed(episodes))
 
@@ -416,11 +419,13 @@ class Anikoto(BaseSource):
                 server_name = li.get_text(strip=True)
 
                 if server_id and server_name:
-                    servers.append(Server(
-                        id=server_id,
-                        name=server_name,
-                        type=video_type,
-                    ))
+                    servers.append(
+                        Server(
+                            id=server_id,
+                            name=server_name,
+                            type=video_type,
+                        )
+                    )
 
         return servers
 
@@ -509,13 +514,15 @@ class Anikoto(BaseSource):
         # Try to find direct m3u8
         m3u8_match = re.search(r'https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*', body)
         if m3u8_match:
-            return await self._extract_direct_m3u8(m3u8_match.group(0), server_id, f"https://{host}/")
+            return await self._extract_direct_m3u8(
+                m3u8_match.group(0), server_id, f"https://{host}/"
+            )
 
         # Try JS variable patterns
         js_m3u8_match = re.search(
-            r'''(?:var|let|const)\s+\w+\s*=\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']'''
-            r'''|(?:file|source|url|src)\s*[:=]\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']''',
-            body
+            r"""(?:var|let|const)\s+\w+\s*=\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']"""
+            r"""|(?:file|source|url|src)\s*[:=]\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']""",
+            body,
         )
         if js_m3u8_match:
             js_url = js_m3u8_match.group(1) or js_m3u8_match.group(2)
@@ -523,9 +530,13 @@ class Anikoto(BaseSource):
                 resolved_url = self._resolve_url(js_url, embed_url)
                 if ".m3u8" in resolved_url or "/stream/" in resolved_url:
                     try:
-                        return await self._fetch_sources_from_page(resolved_url, server_id, f"https://{host}/")
+                        return await self._fetch_sources_from_page(
+                            resolved_url, server_id, f"https://{host}/"
+                        )
                     except Exception:
-                        return await self._extract_direct_m3u8(resolved_url, server_id, f"https://{host}/")
+                        return await self._extract_direct_m3u8(
+                            resolved_url, server_id, f"https://{host}/"
+                        )
 
         return []
 
@@ -552,7 +563,6 @@ class Anikoto(BaseSource):
 
         # Try getSources first
         data = None
-        used_new_api = False
 
         api_url = f"https://{host}/stream/getSources?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
         try:
@@ -560,11 +570,12 @@ class Anikoto(BaseSource):
             if status == 200 and isinstance(resp_data, dict):
                 src = resp_data.get("sources")
                 # Valid if it's a dict with file or a valid list/string URL
-                if (isinstance(src, dict) and src.get("file")) or \
-                   (isinstance(src, list) and src and str(src[0]).startswith("http")) or \
-                   (isinstance(src, str) and src.startswith("http")):
+                if (
+                    (isinstance(src, dict) and src.get("file"))
+                    or (isinstance(src, list) and src and str(src[0]).startswith("http"))
+                    or (isinstance(src, str) and src.startswith("http"))
+                ):
                     data = resp_data
-                    used_new_api = False
         except Exception:
             data = None
 
@@ -575,7 +586,6 @@ class Anikoto(BaseSource):
                 status, resp_data = await self._get_json(api_url, headers=api_headers)
                 if status == 200 and isinstance(resp_data, dict):
                     data = resp_data
-                    used_new_api = True
             except Exception:
                 data = None
 
@@ -601,11 +611,13 @@ class Anikoto(BaseSource):
         tracks = data.get("tracks", []) or []
         for track in tracks:
             if isinstance(track, dict) and track.get("kind") == "captions":
-                subtitles.append(Subtitle(
-                    url=track.get("file", ""),
-                    label=track.get("label", ""),
-                    language=track.get("label", ""),
-                ))
+                subtitles.append(
+                    Subtitle(
+                        url=track.get("file", ""),
+                        label=track.get("label", ""),
+                        language=track.get("label", ""),
+                    )
+                )
 
         # Parse m3u8 for qualities
         return await self._parse_m3u8(m3u8_url, server_id, f"https://{host}/", subtitles)
@@ -683,7 +695,7 @@ class Anikoto(BaseSource):
 
     def _parse_host_map(self, html: str) -> dict[str, str]:
         """Parse HOST_MAP from player page."""
-        map_match = re.search(r'var HOST_MAP\s*=\s*\{([^}]+)\}', html)
+        map_match = re.search(r"var HOST_MAP\s*=\s*\{([^}]+)\}", html)
         if not map_match:
             return {}
 
@@ -707,7 +719,7 @@ class Anikoto(BaseSource):
         subtitles: list[Subtitle],
     ) -> list[Stream]:
         """Parse m3u8 playlist and extract stream URLs with qualities."""
-        from urllib.parse import urljoin, urlparse
+        from urllib.parse import urljoin
 
         headers = {
             "Referer": referer,
@@ -730,14 +742,14 @@ class Anikoto(BaseSource):
             if line.startswith("#EXT-X-STREAM-INF:"):
                 # Parse quality info
                 quality = "Unknown"
-                resolution_match = re.search(r'RESOLUTION=(\d+x\d+)', line)
+                resolution_match = re.search(r"RESOLUTION=(\d+x\d+)", line)
                 if resolution_match:
                     resolution = resolution_match.group(1)
                     height = resolution.split("x")[1]
                     quality = f"{height}p"
 
                 # Get bandwidth for additional quality info
-                bandwidth_match = re.search(r'BANDWIDTH=(\d+)', line)
+                re.search(r"BANDWIDTH=(\d+)", line)
 
                 i += 1
                 if i < len(lines):
@@ -748,16 +760,17 @@ class Anikoto(BaseSource):
                             stream_url = urljoin(base_url, stream_url)
 
                         # Determine codec/type from bandwidth
-                        video_type = "sub"
                         if "dub" in server_id.lower() or "dub" in str(server_id).lower():
-                            video_type = "dub"
+                            pass
 
-                        streams.append(Stream(
-                            url=stream_url,
-                            quality=quality,
-                            headers={"Referer": referer},
-                            subtitles=subtitles,
-                        ))
+                        streams.append(
+                            Stream(
+                                url=stream_url,
+                                quality=quality,
+                                headers={"Referer": referer},
+                                subtitles=subtitles,
+                            )
+                        )
             i += 1
 
         return streams
@@ -768,6 +781,7 @@ class Anikoto(BaseSource):
             return url
 
         from urllib.parse import urljoin
+
         return urljoin(base, url)
 
     def _resolve_video_type(self, label_text: str) -> str:

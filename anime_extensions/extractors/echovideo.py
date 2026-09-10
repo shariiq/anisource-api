@@ -6,8 +6,6 @@ import logging
 from typing import Any
 from urllib.parse import urlparse
 
-import aiohttp
-
 from ..base import BaseExtractor
 from ..models import Stream, Subtitle
 from ..utils.m3u8 import parse_m3u8_streams
@@ -78,7 +76,11 @@ class EchoVideoExtractor(BaseExtractor):
                 sub_url = track.get("file") or track.get("url")
                 sub_label = track.get("label") or track.get("lang") or "Subtitle"
                 kind = track.get("kind", "captions")
-                if sub_url and sub_url.startswith("http") and kind.lower() in ["captions", "subtitles"]:
+                if (
+                    sub_url
+                    and sub_url.startswith("http")
+                    and kind.lower() in ["captions", "subtitles"]
+                ):
                     subtitles.append(Subtitle(url=sub_url, label=sub_label))
 
         video_referer = f"https://{host}/"

@@ -6,8 +6,8 @@ and output sanitization for the REST API.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Generic, TypeVar
+from datetime import UTC, datetime
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -26,26 +26,18 @@ class AnimeSchema(BaseModel):
     title: str = Field(..., description="Display title of the anime.")
     url: str = Field(..., description="Direct URL to the anime page on the source website.")
     thumbnail: str = Field("", description="URL to the anime poster or thumbnail image.")
-    description: str = Field(
-        "", description="Synopsis or detailed description of the anime."
-    )
+    description: str = Field("", description="Synopsis or detailed description of the anime.")
     genres: list[str] = Field(
         default_factory=list, description="List of genres associated with the anime."
     )
-    studios: list[str] = Field(
-        default_factory=list, description="Studios that produced the anime."
-    )
-    producers: list[str] = Field(
-        default_factory=list, description="Producers of the anime."
-    )
+    studios: list[str] = Field(default_factory=list, description="Studios that produced the anime.")
+    producers: list[str] = Field(default_factory=list, description="Producers of the anime.")
     alternative_titles: list[str] = Field(
         default_factory=list, description="Known alternative or localized titles."
     )
     status: str = Field("unknown", description="Release status (ongoing, completed, unknown).")
     score: float | None = Field(None, description="Average viewer score or rating if available.")
-    tags: list[str] = Field(
-        default_factory=list, description="General tags or classifiers."
-    )
+    tags: list[str] = Field(default_factory=list, description="General tags or classifiers.")
 
 
 class EpisodeSchema(BaseModel):
@@ -65,7 +57,9 @@ class ServerSchema(BaseModel):
     """Schema representing an available video streaming server for an episode."""
 
     id: str = Field(..., description="Source-specific unique identifier for the server.")
-    name: str = Field(..., description="Display name of the video hoster (e.g. DoodStream, Vidplay).")
+    name: str = Field(
+        ..., description="Display name of the video hoster (e.g. DoodStream, Vidplay)."
+    )
     type: str = Field(..., description="Type of video track provided (e.g. Sub, Dub, Soft Sub).")
 
 
@@ -97,7 +91,7 @@ class StreamSchema(BaseModel):
 # ==============================================================================
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
+class PaginatedResponse[T](BaseModel):
     """Standardized response format for paginated listings."""
 
     items: list[T] = Field(description="List of returned items.")
@@ -109,7 +103,9 @@ class PaginatedResponse(BaseModel, Generic[T]):
 class SourceInfoResponse(BaseModel):
     """Schema describing an active scraper source."""
 
-    id: str = Field(..., description="Unique technical identifier for the source (e.g. 'aniwaves').")
+    id: str = Field(
+        ..., description="Unique technical identifier for the source (e.g. 'aniwaves')."
+    )
     name: str = Field(..., description="Display name of the source (e.g. 'AniWaves').")
     base_url: str = Field(..., description="Base domain URI targeted by this source.")
 
@@ -128,7 +124,7 @@ class ErrorDetail(BaseModel):
     message: str = Field(..., description="Human-readable error description.")
     path: str = Field(..., description="Path where the error occurred.")
     timestamp: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Time of occurrence.",
     )
 

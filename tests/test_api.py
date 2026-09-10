@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -267,9 +265,7 @@ async def test_servers_and_streams(app):
         assert servers[0]["name"] == "Vidplay"
 
         # Get streams for server
-        res_stream = await client.get(
-            "/api/v1/mock/streams/mock-1-ep-1?server_id=srv-1"
-        )
+        res_stream = await client.get("/api/v1/mock/streams/mock-1-ep-1?server_id=srv-1")
         assert res_stream.status_code == 200
         streams = res_stream.json()
         assert len(streams) == 1
@@ -291,8 +287,6 @@ async def test_upstream_error_handling(app):
         assert data["error"]["code"] == "UPSTREAM_SOURCE_ERROR"
 
         # Upstream failure on streams
-        res_stream = await client.get(
-            "/api/v1/mock/streams/mock-1-ep-1?server_id=broken"
-        )
+        res_stream = await client.get("/api/v1/mock/streams/mock-1-ep-1?server_id=broken")
         assert res_stream.status_code == 502
         assert res_stream.json()["error"]["code"] == "UPSTREAM_SOURCE_ERROR"

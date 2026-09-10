@@ -86,7 +86,7 @@ class Miruro(BaseSource):
 
     name = "Miruro.tv"
     id = "miruro"
-    base_url = "https://www.miruro.tv"
+    base_url = "https://miruro.tv"
 
     DOMAINS = ["miruro.tv", "miruro.to", "miruro.bz", "miruro.com"]
 
@@ -106,6 +106,18 @@ class Miruro(BaseSource):
             self.base_url = f"https://{domain}"
         self.preferred_provider = preferred_provider
         self.preferred_sub_type = preferred_sub_type
+
+        # Miruro pipe API requires specific headers to avoid 403 Forbidden
+        self._headers.update(
+            {
+                "Referer": f"{self.base_url}/",
+                "Origin": self.base_url,
+                "Accept": "application/json, text/plain, */*",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+            }
+        )
 
     # ── Pipe API ─────────────────────────────────────────────────────────────
 

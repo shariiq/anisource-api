@@ -15,7 +15,7 @@ COPY pyproject.toml README.md ./
 # Install dependencies into virtual environment
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv /app/.venv && \
-    uv pip install --no-cache -r pyproject.toml
+    uv pip install --no-cache .
 
 # Copy source code and install project
 COPY anime_extensions/ anime_extensions/

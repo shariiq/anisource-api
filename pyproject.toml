@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "anime-extensions"
+name = "anisource-api"
 version = "0.2.0"
 description = "High-performance async Python library and REST API for anime scrapers, episode indexers, and video extractors."
 readme = "README.md"

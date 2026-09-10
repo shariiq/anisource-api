@@ -1,12 +1,12 @@
-name: anime-extensions
+name: anisource-api
 
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: anime-extensions-api:latest
-    container_name: anime-extensions-api
+    image: anisource-api:latest
+    container_name: anisource-api
     restart: unless-stopped
     ports:
       - "8000:8000"

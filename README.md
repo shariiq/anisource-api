@@ -2,7 +2,7 @@
 
 A high-performance, asynchronous Python library and production-grade REST API for anime scrapers, episode indexers, server resolvers, and video extractors (ported from Tachiyomi / Aniyomi Kotlin extensions).
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/anime-extensions-py/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/anime-extensions-py/actions/workflows/ci.yml)
+[![CI](https://github.com/shariiq/anisource-api/actions/workflows/ci.yml/badge.svg)](https://github.com/shariiq/anisource-api/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
@@ -32,8 +32,8 @@ This project targets Python 3.12+ and uses [uv](https://docs.astral.sh/uv/) for 
 
 ```bash
 # Clone the repository and enter the project
- git clone https://github.com/YOUR_GITHUB_USERNAME/anime-extensions-py.git
- cd anime-extensions-py
+git clone https://github.com/shariiq/anisource-api.git
+cd anisource-api
 
 # Install uv (if it is not already installed), then install the project
 uv sync --extra dev

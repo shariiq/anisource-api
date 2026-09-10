@@ -1,0 +1,31 @@
+name: anime-extensions
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anime-extensions-api:latest
+    container_name: anime-extensions-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ANIME_API_HOST=0.0.0.0
+      - ANIME_API_PORT=8000
+      - ANIME_API_DEBUG=false
+      - ANIME_API_CACHE_ENABLED=true
+      - ANIME_API_CACHE_POPULAR_TTL=1800
+      - ANIME_API_CACHE_DETAILS_TTL=3600
+      - ANIME_API_CACHE_STREAMS_TTL=300
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

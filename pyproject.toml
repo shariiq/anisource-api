@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "anime-extensions"
+version = "0.2.0"
+description = "High-performance async Python library and REST API for anime scrapers, episode indexers, and video extractors."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "Anime Extensions Contributors" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "aiohttp>=3.11.0",
+    "beautifulsoup4>=4.13.0",
+    "fastapi>=0.115.0",
+    "m3u8>=6.0.0",
+    "pydantic>=2.10.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.28.0",
+    "mypy>=1.14.0",
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.9.0",
+]
+
+[project.scripts]
+anime-api = "anime_extensions_api.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["anime_extensions", "anime_extensions_api"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]

@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.11.0",
     "beautifulsoup4>=4.13.0",
+    "cryptography>=44.0.0",
     "fastapi>=0.115.0",
     "m3u8>=6.0.0",
     "pydantic>=2.10.0",

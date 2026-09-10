@@ -1,11 +1,19 @@
 """Unit tests for EchoVideo (Vidplay / MyCloud) video extractor."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from anime_extensions.extractors.echovideo import EchoVideoExtractor
 from anime_extensions.models import Stream
+
+
+def _async_ctx(resp):
+    """Helper to create async context manager from mock response."""
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return ctx
 
 
 @pytest.mark.asyncio
@@ -30,18 +38,18 @@ async def test_echovideo_extractor_m3u8_flow():
         "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1920x1080\n1080p/index.m3u8\n"
     )
 
-    mock_api_resp = AsyncMock()
+    mock_api_resp = MagicMock()
     mock_api_resp.status = 200
     mock_api_resp.json = AsyncMock(return_value=api_payload)
 
-    mock_hls_resp = AsyncMock()
+    mock_hls_resp = MagicMock()
     mock_hls_resp.status = 200
     mock_hls_resp.text = AsyncMock(return_value=master_hls)
 
-    mock_session = AsyncMock()
+    mock_session = MagicMock()
     mock_session.get.side_effect = [
-        AsyncMock(__aenter__=AsyncMock(return_value=mock_api_resp)),
-        AsyncMock(__aenter__=AsyncMock(return_value=mock_hls_resp)),
+        _async_ctx(mock_api_resp),
+        _async_ctx(mock_hls_resp),
     ]
 
     with patch.object(extractor, "_ensure_session", return_value=mock_session):
@@ -75,12 +83,12 @@ async def test_echovideo_extractor_datsav_quality_files():
         "tracks": [],
     }
 
-    mock_api_resp = AsyncMock()
+    mock_api_resp = MagicMock()
     mock_api_resp.status = 200
     mock_api_resp.json = AsyncMock(return_value=api_payload)
 
-    mock_session = AsyncMock()
-    mock_session.get.return_value = AsyncMock(__aenter__=AsyncMock(return_value=mock_api_resp))
+    mock_session = MagicMock()
+    mock_session.get.return_value = _async_ctx(mock_api_resp)
 
     with patch.object(extractor, "_ensure_session", return_value=mock_session):
         streams = await extractor.extract(

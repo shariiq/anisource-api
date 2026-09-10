@@ -1,13 +1,21 @@
 """Unit tests for the Byse challenge and playback extractor."""
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from anime_extensions.exceptions import ExtractorError
 from anime_extensions.extractors.byse import ByseExtractor
 from anime_extensions.models import Stream
+
+
+def _async_ctx(resp):
+    """Helper to create async context manager from mock response."""
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return ctx
 
 
 @pytest.mark.asyncio
@@ -26,7 +34,9 @@ async def test_byse_extractor_challenge_and_playback_flow():
             ],
         }
     )
-    responses = [
+
+    # Create mock responses with proper async context manager support
+    response_data = [
         {"nonce": "nonce-1", "challenge_id": "challenge-1"},
         {
             "token": "fingerprint-token",
@@ -39,17 +49,15 @@ async def test_byse_extractor_challenge_and_playback_flow():
         {"playback": "encrypted-payload"},
     ]
 
-    mock_session = AsyncMock()
-    mock_session.post.side_effect = [
-        AsyncMock(
-            __aenter__=AsyncMock(
-                return_value=type(
-                    "Response", (), {"status": 200, "json": AsyncMock(return_value=data)}
-                )()
-            )
-        )
-        for data in responses
-    ]
+    mock_responses = []
+    for data in response_data:
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=data)
+        mock_responses.append(_async_ctx(mock_resp))
+
+    mock_session = MagicMock()
+    mock_session.post.side_effect = mock_responses
 
     with (
         patch.object(extractor, "_ensure_session", return_value=mock_session),
@@ -82,9 +90,10 @@ async def test_byse_extractor_challenge_and_playback_flow():
 async def test_byse_extractor_rejects_failed_challenge():
     """Test a non-success challenge response raises a useful extractor error."""
     extractor = ByseExtractor()
-    response = type("Response", (), {"status": 403})()
-    mock_session = AsyncMock()
-    mock_session.post.return_value = AsyncMock(__aenter__=AsyncMock(return_value=response))
+    mock_resp = MagicMock()
+    mock_resp.status = 403
+    mock_session = MagicMock()
+    mock_session.post.return_value = _async_ctx(mock_resp)
 
     with (
         patch.object(extractor, "_ensure_session", return_value=mock_session),
@@ -97,7 +106,7 @@ async def test_byse_extractor_rejects_failed_challenge():
 async def test_byse_extractor_requires_media_id():
     """Test malformed embed paths fail before making any network request."""
     extractor = ByseExtractor()
-    mock_session = AsyncMock()
+    mock_session = MagicMock()
 
     with (
         patch.object(extractor, "_ensure_session", return_value=mock_session),

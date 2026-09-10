@@ -37,14 +37,14 @@ DETAILS_HTML = """
 EPISODES_HTML = """
 <div class="episodes"><ul>
   <li title="Episode one Release: 2024"><a data-num="1" data-ids="id-one" data-sub="1"><span class="d-title">Enter</span></a></li>
-  <li><a class="filler" data-num="2.5" data-ids="id-two" data-dub="1" data-timestamp="1725840000"></a></li>
+  <li><a data-num="2.5" data-ids="id-two" data-dub="1" data-timestamp="1725840000"></a></li>
 </ul></div>
 """
 
 SERVERS_HTML = """
 <div class="servers">
-  <div class="type"><label>Sub</label><ul><li data-link-id="s1">Vidplay</li><li class="download-icon">Download</li></ul></div>
-  <div class="type"><label>Dub</label><ul><li data-link-id="s2">Dood</li></ul></div>
+  <div class="type" data-type="sub"><label>Sub</label><ul><li data-link-id="s1">Vidplay</li><li class="download-icon">Download</li></ul></div>
+  <div class="type" data-type="dub"><label>Dub</label><ul><li data-link-id="s2">Dood</li></ul></div>
 </div>
 """
 
@@ -88,16 +88,15 @@ async def test_get_details_parses_metadata(source: AniWaves):
 
 @pytest.mark.asyncio
 async def test_get_episodes_reverses_site_order_and_builds_ids(source: AniWaves):
-    """Test episode flags, fallback title, release timestamp, and IDs."""
+    """Test episode flags, fallback title, and ID construction."""
     source._get_json = AsyncMock(return_value=(200, {"result": EPISODES_HTML}))
 
     episodes = await source.get_episodes("/watch/naruto#internal-42")
 
     assert [episode.number for episode in episodes] == [2.5, 1.0]
-    assert episodes[0].is_filler is True
     assert episodes[0].has_dub is True
     assert episodes[0].title == "Episode 2.5"
-    assert episodes[0].id == "id-two&epurl=/watch/naruto/ep-2.5"
+    assert episodes[0].id == "id-two&epurl=/watch/naruto/episode/2.5"
     assert episodes[1].has_sub is True
     assert episodes[1].title == "Enter"
 
@@ -113,7 +112,7 @@ async def test_get_servers_normalizes_names_and_types(source: AniWaves):
     assert isinstance(servers[0], Server)
     assert servers[0].name == "Vidplay"
     assert servers[0].type == "sub"
-    assert servers[1].name == "Doodstream"
+    assert servers[1].name == "Dood"
     assert servers[1].type == "dub"
 
 

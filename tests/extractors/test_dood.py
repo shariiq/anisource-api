@@ -1,11 +1,19 @@
 """Unit tests for Doodstream extractor."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from anime_extensions.extractors.dood import DoodExtractor
 from anime_extensions.models import Stream, Subtitle
+
+
+def _async_ctx(resp):
+    """Helper to create async context manager from mock response."""
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=resp)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    return ctx
 
 
 @pytest.mark.asyncio
@@ -25,19 +33,19 @@ async def test_dood_extractor_success():
     </html>
     """
 
-    mock_embed_resp = AsyncMock()
+    mock_embed_resp = MagicMock()
     mock_embed_resp.url = "https://dood.to/e/abcdef12345"
     mock_embed_resp.text = AsyncMock(return_value=embed_html)
 
     # Mock pass_md5 endpoint response
-    mock_pass_resp = AsyncMock()
+    mock_pass_resp = MagicMock()
     mock_pass_resp.text = AsyncMock(return_value="https://video-cdn.dood.to/stream/")
 
-    # Setup session.get context manager mocks
-    mock_session = AsyncMock()
+    # Setup session.get to return context managers
+    mock_session = MagicMock()
     mock_session.get.side_effect = [
-        AsyncMock(__aenter__=AsyncMock(return_value=mock_embed_resp)),
-        AsyncMock(__aenter__=AsyncMock(return_value=mock_pass_resp)),
+        _async_ctx(mock_embed_resp),
+        _async_ctx(mock_pass_resp),
     ]
 
     with patch.object(extractor, "_ensure_session", return_value=mock_session):
@@ -65,12 +73,12 @@ async def test_dood_extractor_no_pass_md5():
     extractor = DoodExtractor()
 
     embed_html = "<html><body>Protected / No token available</body></html>"
-    mock_embed_resp = AsyncMock()
+    mock_embed_resp = MagicMock()
     mock_embed_resp.url = "https://dood.to/e/abcdef12345"
     mock_embed_resp.text = AsyncMock(return_value=embed_html)
 
-    mock_session = AsyncMock()
-    mock_session.get.return_value = AsyncMock(__aenter__=AsyncMock(return_value=mock_embed_resp))
+    mock_session = MagicMock()
+    mock_session.get.return_value = _async_ctx(mock_embed_resp)
 
     with patch.object(extractor, "_ensure_session", return_value=mock_session):
         streams = await extractor.extract("https://dood.to/e/abcdef12345")

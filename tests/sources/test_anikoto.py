@@ -35,8 +35,8 @@ DETAILS_HTML = """
 
 EPISODES_HTML = """
 <div class="episodes"><ul>
-  <li title="The Beginning Release: 1725840000"><a data-num="1" data-ids="ep-id-1" data-sub="1"><span class="d-title">The Journey</span></a></li>
-  <li class="filler"><a data-num="2" data-ids="ep-id-2" data-dub="1" data-timestamp="1725926400"></a></li>
+  <li><a data-num="1" data-ids="ep-id-1" data-sub="1" data-timestamp="1725840000"><span class="d-title">The Journey</span></a></li>
+  <li><a class="filler" data-num="2" data-ids="ep-id-2" data-dub="1" data-timestamp="1725926400"></a></li>
 </ul></div>
 """
 

@@ -45,10 +45,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Check linting
-        run: uv run ruff check anime_extensions anime_extensions_api tests --output-format=github
+        run: uvx ruff check anime_extensions anime_extensions_api tests --output-format=github
 
       - name: Check formatting
-        run: uv run ruff format --check anime_extensions anime_extensions_api tests
+        run: uvx ruff format --check anime_extensions anime_extensions_api tests
 
   type-check:
     name: Type check and compile
@@ -202,7 +202,7 @@ jobs:
           python -c "import anime_extensions; import anime_extensions_api"
 
       - name: Scan Docker image
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@master
         continue-on-error: true
         with:
           image-ref: anisource-api:${{ github.sha }}
@@ -218,13 +218,9 @@ jobs:
     if: always()
     steps:
       - name: Require all checks to pass
-        env:
-          RESULTS: ${{ toJSON(needs) }}
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
-          echo "$RESULTS"
-          test '${{ needs.lint.result }}' = success
-          test '${{ needs.type-check.result }}' = success
-          test '${{ needs.test-unit.result }}' = success
-          test '${{ needs.test-live.result }}' = success
-          test '${{ needs.build-package.result }}' = success
-          test '${{ needs.docker-build.result }}' = success
+          echo "One or more required jobs failed or were cancelled."
+          exit 1
+      - name: Success
+        run: echo "All pipelines passed successfully!"

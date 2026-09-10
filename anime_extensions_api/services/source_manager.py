@@ -6,7 +6,7 @@ import logging
 
 import aiohttp
 
-from anime_extensions import Anikoto, AniWaves, Miruro
+from anime_extensions import Anikoto, AniWaves
 from anime_extensions.base import BaseSource
 from anime_extensions.exceptions import AnimeExtensionError
 
@@ -46,16 +46,13 @@ class SourceManager:
         # Register known sources
         aniwaves = AniWaves(session=self._session)
         anikoto = Anikoto(session=self._session)
-        miruro = Miruro(session=self._session)
 
         # Initialize internal state if needed
         await aniwaves._ensure_session()
         await anikoto._ensure_session()
-        await miruro._ensure_session()
 
         self._registry[aniwaves.id] = aniwaves
         self._registry[anikoto.id] = anikoto
-        self._registry[miruro.id] = miruro
 
         log.info(f"Successfully registered sources: {list(self._registry.keys())}")
 

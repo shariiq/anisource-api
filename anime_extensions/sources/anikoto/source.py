@@ -11,8 +11,8 @@ from urllib.parse import quote
 
 from bs4 import BeautifulSoup
 
-from ..base import BaseSource
-from ..models import Anime, Episode, Server, Stream, Subtitle
+from ...base import BaseSource
+from ...models import Anime, Episode, Server, Stream, Subtitle
 
 # === VRF Encryption (inline, no external module) ===
 
@@ -57,18 +57,7 @@ def _exchange(input_str: str, keys: list[str]) -> str:
     return "".join(result)
 
 
-def vrf_encrypt(input_str: str) -> str:
-    """Encrypt string using Anikoto's VRF cipher."""
-    vrf = input_str
-    vrf = _exchange(vrf, _EXCHANGE_KEY_1)
-    vrf = _rc4_encrypt(_KEY_1, vrf)
-    vrf = _rc4_encrypt(_KEY_2, vrf)
-    vrf = _exchange(vrf, _EXCHANGE_KEY_2)
-    vrf = _exchange(vrf, _EXCHANGE_KEY_3)
-    vrf = vrf[::-1]
-    vrf = _rc4_encrypt(_KEY_3, vrf)
-    vrf = base64.urlsafe_b64encode(vrf.encode("utf-8")).decode("utf-8").rstrip("=")
-    return quote(vrf, safe="")
+from ...utils.crypto import vrf_encrypt
 
 
 # === Anikoto Source ===
@@ -100,13 +89,13 @@ class Anikoto(BaseSource):
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch popular anime."""
         url = f"{self.base_url}/most-viewed/"
-        status, html = await self._request(url, params={"page": page})
+        html = await self._request(url, params={"page": page})
         return self._parse_listing(html)
 
     async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch latest updated anime."""
         url = f"{self.base_url}/latest-updated/"
-        status, html = await self._request(url, params={"page": page})
+        html = await self._request(url, params={"page": page})
         return self._parse_listing(html)
 
     async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
@@ -117,7 +106,7 @@ class Anikoto(BaseSource):
             "vrf": vrf_encrypt(query),
         }
         url = f"{self.base_url}/filter"
-        status, html = await self._request(url, params=params)
+        html = await self._request(url, params=params)
         return self._parse_listing(html)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
@@ -176,7 +165,7 @@ class Anikoto(BaseSource):
         anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
 
         url = f"{self.base_url}{anime_path}"
-        status, html = await self._request(url)
+        html = await self._request(url)
         soup = BeautifulSoup(html, "html.parser")
 
         # Title - prefer Japanese title from data-jp attribute
@@ -306,8 +295,8 @@ class Anikoto(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        status, data = await self._get_json(ajax_url, headers=headers, params={"vrf": vrf})
-        if status != 200 or not isinstance(data, dict):
+        data = await self._get_json(ajax_url, headers=headers, params={"vrf": vrf})
+        if not isinstance(data, dict):
             return []
 
         html_result = data.get("result", "")
@@ -394,8 +383,8 @@ class Anikoto(BaseSource):
             "X-Requested-With": "XMLHttpRequest",
         }
 
-        status, data = await self._get_json(ajax_url, headers=headers, params={"servers": ids})
-        if status != 200 or not isinstance(data, dict):
+        data = await self._get_json(ajax_url, headers=headers, params={"servers": ids})
+        if not isinstance(data, dict):
             return []
 
         html_result = data.get("result", "")
@@ -473,7 +462,7 @@ class Anikoto(BaseSource):
         }
 
         status, data = await self._get_json(ajax_url, headers=headers, params={"get": server_id})
-        if status != 200 or not isinstance(data, dict):
+        if not isinstance(data, dict):
             return None
 
         result = data.get("result", {})

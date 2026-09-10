@@ -105,4 +105,4 @@ class AsyncTTLCache:
 
 
 # Global cache instance for the API
-api_cache = AsyncTTLCache(max_items=5000)
+api_cache = AsyncTTLCache(max_items=1000)

@@ -10,6 +10,7 @@ from typing import Any
 import aiohttp
 
 from .models import Anime, Episode, Server, Stream
+from .exceptions import HttpError, ParsingError
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,14 @@ class BaseSource(ABC):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         }
+        self._extractors: dict[type[BaseExtractor], BaseExtractor] = {}
+
+    async def _get_extractor(self, extractor_cls: type[BaseExtractor]) -> BaseExtractor:
+        """Return a cached extractor instance or create a new one."""
+        if extractor_cls not in self._extractors:
+            session = await self._ensure_session()
+            self._extractors[extractor_cls] = extractor_cls(session=session)
+        return self._extractors[extractor_cls]
 
     async def _ensure_session(self) -> aiohttp.ClientSession:
         """Ensure an active aiohttp session exists."""
@@ -63,16 +72,19 @@ class BaseSource(ABC):
         *,
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, Any] | None = None,
-    ) -> tuple[int, str]:
-        """Make a GET request and return (status_code, body)."""
+    ) -> str:
+        """Make a GET request and return the body. Raises HttpError on failure."""
         session = await self._ensure_session()
         final_headers = dict(self._headers)
         if headers:
             final_headers.update(headers)
 
         async with session.get(url, headers=final_headers, params=params) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HttpError(f"GET {url} failed with status {response.status}", status_code=response.status)
+
             body = await response.text(errors="replace")
-            return response.status, body
+            return body
 
     async def _get_json(
         self,
@@ -80,19 +92,21 @@ class BaseSource(ABC):
         *,
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, Any] | None = None,
-    ) -> tuple[int, Any]:
-        """Make a GET request expecting a JSON response."""
+    ) -> Any:
+        """Make a GET request expecting a JSON response. Raises HttpError on failure."""
         session = await self._ensure_session()
         final_headers = dict(self._headers)
         if headers:
             final_headers.update(headers)
 
         async with session.get(url, headers=final_headers, params=params) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HttpError(f"GET JSON {url} failed with status {response.status}", status_code=response.status)
             try:
                 data = await response.json(content_type=None)
             except Exception:
-                data = None
-            return response.status, data
+                raise ParsingError(f"Failed to decode JSON response from {url}")
+            return data
 
     async def _post_json(
         self,
@@ -101,8 +115,8 @@ class BaseSource(ABC):
         json_data: Any = None,
         headers: Mapping[str, str] | None = None,
         params: Mapping[str, Any] | None = None,
-    ) -> tuple[int, Any]:
-        """Make a POST request with JSON payload expecting a JSON response."""
+    ) -> Any:
+        """Make a POST request with JSON payload expecting a JSON response. Raises HttpError on failure."""
         session = await self._ensure_session()
         final_headers = dict(self._headers)
         if headers:
@@ -114,11 +128,13 @@ class BaseSource(ABC):
             headers=final_headers,
             params=params,
         ) as response:
+            if response.status < 200 or response.status >= 300:
+                raise HttpError(f"POST JSON {url} failed with status {response.status}", status_code=response.status)
             try:
                 data = await response.json(content_type=None)
             except Exception:
-                data = None
-            return response.status, data
+                raise ParsingError(f"Failed to decode JSON response from {url}")
+            return data
 
     # === Abstract Methods ===
 

@@ -9,12 +9,12 @@ from typing import Any
 
 from bs4 import BeautifulSoup
 
-from ..base import BaseSource
-from ..extractors.byse import ByseExtractor
-from ..extractors.dood import DoodExtractor
-from ..extractors.echovideo import EchoVideoExtractor
-from ..models import Anime, Episode, Server, Stream
-from ..utils.crypto import vrf_encrypt
+from ...base import BaseSource
+from ...extractors.byse import ByseExtractor
+from ...extractors.dood import DoodExtractor
+from ...extractors.echovideo import EchoVideoExtractor
+from ...models import Anime, Episode, Server, Stream
+from ...utils.crypto import vrf_encrypt
 
 log = logging.getLogger(__name__)
 
@@ -77,14 +77,14 @@ class AniWaves(BaseSource):
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch popular/trending anime."""
         url = f"{self.base_url}/trending/page/{page}"
-        status, html = await self._request(url)
+        html = await self._request(url)
         return self._parse_listing(html)
 
     async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch latest updated anime."""
         url = f"{self.base_url}/filter"
         params = {"sort_by": "last_updated", "page": page}
-        status, html = await self._request(url, params=params)
+        html = await self._request(url, params=params)
         return self._parse_listing(html)
 
     async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
@@ -95,12 +95,12 @@ class AniWaves(BaseSource):
             slug = re.sub(r"[^a-z0-9-]", "", slug)
             tag_page = "" if page == 1 else f"/page/{page}"
             url = f"{self.base_url}/tags/{slug}{tag_page}"
-            status, html = await self._request(url)
+            html = await self._request(url)
             return self._parse_listing(html)
 
         params = {"keyword": query, "page": page}
         url = f"{self.base_url}/filter"
-        status, html = await self._request(url, params=params)
+        html = await self._request(url, params=params)
         return self._parse_listing(html)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:

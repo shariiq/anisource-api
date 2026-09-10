@@ -78,7 +78,7 @@ def test_parse_listing_prefers_japanese_title(source: Anikoto):
 @pytest.mark.asyncio
 async def test_get_details_extracts_internal_id_and_metadata(source: Anikoto):
     """Test details page metadata extraction and composite IDs."""
-    source._request = AsyncMock(return_value=(200, DETAILS_HTML))
+    source._request = AsyncMock(return_value=DETAILS_HTML)
 
     anime = await source.get_details("frieren-1")
 
@@ -97,7 +97,7 @@ async def test_get_details_extracts_internal_id_and_metadata(source: Anikoto):
 @pytest.mark.asyncio
 async def test_get_episodes_reverse_and_parse_timestamps(source: Anikoto):
     """Test episodes reversed, flags parsed, and IDs built."""
-    source._get_json = AsyncMock(return_value=(200, {"result": EPISODES_HTML}))
+    source._get_json = AsyncMock(return_value={"result": EPISODES_HTML})
 
     episodes = await source.get_episodes("/watch/frieren-1#internal-999")
 
@@ -114,7 +114,7 @@ async def test_get_episodes_reverse_and_parse_timestamps(source: Anikoto):
 @pytest.mark.asyncio
 async def test_get_servers_filters_downloads_and_resolves_types(source: Anikoto):
     """Test server parsing with type resolution: sub, dub, h-sub."""
-    source._get_json = AsyncMock(return_value=(200, {"result": SERVERS_HTML}))
+    source._get_json = AsyncMock(return_value={"result": SERVERS_HTML})
 
     servers = await source.get_servers("ep-id-1&epurl=/watch/frieren-1/ep-1")
 

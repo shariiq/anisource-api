@@ -254,7 +254,16 @@ class MKissaBundle:
         }
         aliases = {name: _AliasDecoder(name, 0, 0) for name in bases}
         for match in _ALIAS_DECODER_REGEX.finditer(js):
-            name, first_parameter, second_parameter, callee, argument, sign, obj_delta, arith_delta = match.groups()
+            (
+                name,
+                first_parameter,
+                second_parameter,
+                callee,
+                argument,
+                sign,
+                obj_delta,
+                arith_delta,
+            ) = match.groups()
             if callee not in bases:
                 continue
             # Handle both old pattern: delta as arithmetic expression

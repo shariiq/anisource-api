@@ -7,18 +7,12 @@ import pytest
 from anime_extensions.extractors.streamwish import StreamWishExtractor
 
 
-def _async_ctx(resp):
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=resp)
-    ctx.__aexit__ = AsyncMock(return_value=None)
-    return ctx
-
-
 @pytest.fixture
 def mock_context():
     ctx = MagicMock()
     ctx.http = MagicMock()
-    ctx.http.session = MagicMock()
+    # Explicitly mock get as an async function
+    ctx.http.get = AsyncMock()
     return ctx
 
 
@@ -46,17 +40,9 @@ https://wish.cdn.com/hls/720p.m3u8
 https://wish.cdn.com/hls/1080p.m3u8
 """
 
-    mock_html_resp = MagicMock()
-    mock_html_resp.status = 200
-    mock_html_resp.text = AsyncMock(return_value=html_content)
-
-    mock_hls_resp = MagicMock()
-    mock_hls_resp.status = 200
-    mock_hls_resp.text = AsyncMock(return_value=hls_m3u8)
-
-    mock_context.http.session.get.side_effect = [
-        _async_ctx(mock_html_resp),
-        _async_ctx(mock_hls_resp),
+    mock_context.http.get.side_effect = [
+        html_content,
+        hls_m3u8,
     ]
 
     streams = await extractor.extract("https://streamwish.com/e/abc12345")

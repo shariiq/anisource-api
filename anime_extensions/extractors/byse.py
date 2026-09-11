@@ -31,7 +31,7 @@ USER_AGENT = (
 POW_TIMEOUT_SECONDS = 60
 
 
-@register_extractor(r"byse|byfms|filemoon|gn1r5n")
+@register_extractor(r"byfms|gn1r5n|bysekoze|byse(?!sayeveum)")
 class ByseExtractor(Extractor):
     """Extractor for Byse/BYFMS video provider.
 

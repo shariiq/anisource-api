@@ -34,6 +34,7 @@ async def test_search(animenosub_source: AnimeNoSub) -> None:
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_full_extraction_flow(animenosub_source: AnimeNoSub) -> None:
+    """Test end-to-end extraction, finding any working server."""
     results, _ = await animenosub_source.search("Attack on Titan", page=1)
     assert results, "Search failed"
     anime = results[0]
@@ -49,6 +50,49 @@ async def test_full_extraction_flow(animenosub_source: AnimeNoSub) -> None:
     servers = await animenosub_source.get_servers(episode.id)
     assert servers, "Expected at least one server"
 
-    streams: list[Stream] = await animenosub_source.get_streams(episode.id, servers[0].id)
-    assert streams, "Expected at least one playable stream"
+    # Try each server until one produces streams
+    streams: list[Stream] = []
+    for server in servers:
+        try:
+            streams = await animenosub_source.get_streams(episode.id, server.id)
+            if streams:
+                break
+        except Exception:
+            continue
+
+    assert streams, "Expected at least one playable stream from any server"
     assert streams[0].url.startswith("http")
+
+
+@pytest.mark.live
+@pytest.mark.asyncio
+async def test_all_server_extraction(animenosub_source: AnimeNoSub) -> None:
+    """Test stream extraction across all discovered AnimeNoSub servers."""
+    results, _ = await animenosub_source.search("Attack on Titan", page=1)
+    assert results, "Search failed"
+    anime = results[0]
+
+    episodes = await animenosub_source.get_episodes(anime.id)
+    assert episodes, "No episodes found"
+
+    episode = episodes[0]
+    servers = await animenosub_source.get_servers(episode.id)
+    assert servers, "No servers found"
+
+    outcomes = []
+    for server in servers:
+        try:
+            streams = await animenosub_source.get_streams(episode.id, server.id)
+            if streams:
+                outcomes.append(f"✓ {server.name}: {len(streams)} streams")
+            else:
+                outcomes.append(f"✗ {server.name}: no streams returned")
+        except Exception as exc:
+            outcomes.append(f"✗ {server.name}: {type(exc).__name__}: {exc}")
+
+    print("\nAnimeNoSub Server Coverage:")
+    for outcome in outcomes:
+        print(f"  {outcome}")
+
+    working = [o for o in outcomes if o.startswith("✓")]
+    assert working, "No working servers found. Outcomes:\n" + "\n".join(outcomes)

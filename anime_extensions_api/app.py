@@ -12,13 +12,22 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anime_extensions.exceptions import AnimeExtensionError
+from anime_extensions.exceptions import (
+    AnimeExtensionError,
+    HttpError,
+    ParsingError,
+    UpstreamNotFound,
+    UpstreamRateLimited,
+)
+from anime_extensions.exceptions import (
+    TimeoutError as ExtensionTimeoutError,
+)
 
 from .config import APISettings, get_settings
 from .routers import anime, health, sources, streams
 from .schemas import ErrorDetail, ErrorResponse
-from .services.cache import api_cache
-from .services.source_manager import SourceNotFoundError, source_manager
+from .services.cache import AsyncTTLCache
+from .services.source_manager import SourceManager, SourceNotFoundError
 
 # Configure structured logging
 logging.basicConfig(
@@ -28,15 +37,33 @@ logging.basicConfig(
 log = logging.getLogger("anime_extensions_api")
 
 
+def _upstream_error_response(
+    request: Request, status_code: int, code: str, message: str
+) -> JSONResponse:
+    """Return a safe, structured response for a scraper/upstream error."""
+    return JSONResponse(
+        status_code=status_code,
+        content=ErrorResponse(
+            error=ErrorDetail(code=code, message=message, path=request.url.path)
+        ).model_dump(mode="json"),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Lifespan context manager for startup and shutdown event handling."""
+    """Manage application-scoped runtime and cache lifecycles."""
     log.info("Starting up Anime Extensions API...")
+    source_manager = SourceManager()
+    cache = AsyncTTLCache(max_items=1000)
+    app.state.source_manager = source_manager
+    app.state.cache = cache
     await source_manager.initialize()
-    yield
-    log.info("Shutting down Anime Extensions API...")
-    await source_manager.close()
-    api_cache.clear()
+    try:
+        yield
+    finally:
+        log.info("Shutting down Anime Extensions API...")
+        await source_manager.close()
+        cache.clear()
 
 
 def create_app(settings: APISettings | None = None) -> FastAPI:
@@ -97,20 +124,45 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
             ).model_dump(mode="json"),
         )
 
+    @app.exception_handler(UpstreamNotFound)
+    async def upstream_not_found_handler(request: Request, exc: UpstreamNotFound) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_404_NOT_FOUND, "UPSTREAM_NOT_FOUND", str(exc)
+        )
+
+    @app.exception_handler(UpstreamRateLimited)
+    async def upstream_rate_limited_handler(
+        request: Request, exc: UpstreamRateLimited
+    ) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_429_TOO_MANY_REQUESTS, "UPSTREAM_RATE_LIMITED", str(exc)
+        )
+
+    @app.exception_handler(ExtensionTimeoutError)
+    async def timeout_handler(request: Request, exc: ExtensionTimeoutError) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_504_GATEWAY_TIMEOUT, "UPSTREAM_TIMEOUT", str(exc)
+        )
+
+    @app.exception_handler(ParsingError)
+    async def parsing_error_handler(request: Request, exc: ParsingError) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_502_BAD_GATEWAY, "UPSTREAM_PARSE_ERROR", str(exc)
+        )
+
+    @app.exception_handler(HttpError)
+    async def http_error_handler(request: Request, exc: HttpError) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_502_BAD_GATEWAY, "UPSTREAM_HTTP_ERROR", str(exc)
+        )
+
     @app.exception_handler(AnimeExtensionError)
     async def anime_extension_error_handler(
         request: Request, exc: AnimeExtensionError
     ) -> JSONResponse:
-        log.error(f"AnimeExtensionError on {request.url.path}: {exc}")
-        return JSONResponse(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            content=ErrorResponse(
-                error=ErrorDetail(
-                    code="UPSTREAM_SOURCE_ERROR",
-                    message=f"Scraper/upstream error: {exc}",
-                    path=request.url.path,
-                )
-            ).model_dump(mode="json"),
+        log.error("AnimeExtensionError on %s: %s", request.url.path, exc)
+        return _upstream_error_response(
+            request, status.HTTP_502_BAD_GATEWAY, "UPSTREAM_SOURCE_ERROR", str(exc)
         )
 
     @app.exception_handler(HTTPException)

@@ -9,8 +9,8 @@ import json
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -18,6 +18,9 @@ import aiohttp
 from ...exceptions import CryptoError
 from ...utils.mkissa_crypto import MKissaCrypto
 from .bundle import BuildInfo, MKissaBundle, MKissaConfig
+
+if TYPE_CHECKING:
+    from ...core.http import HttpClient
 
 log = logging.getLogger(__name__)
 
@@ -52,14 +55,11 @@ class MKissaKeyManager:
 
     def __init__(
         self,
-        session: aiohttp.ClientSession | None,
+        http_client: HttpClient,
         site_url: str,
         api_url: str,
-        *,
-        session_factory: Callable[[], Awaitable[aiohttp.ClientSession]] | None = None,
     ) -> None:
-        self._session = session
-        self._session_factory = session_factory
+        self._http = http_client
         self.site_url = site_url.rstrip("/")
         self.api_url = api_url.rstrip("/")
         self._cached_material: Material | None = None
@@ -207,7 +207,10 @@ class MKissaKeyManager:
         epochs: list[int],
         config: MKissaConfig | None,
     ) -> tuple[dict[str, object] | None, bool]:
-        session = await self._ensure_session()
+        session = self._http.session
+        if session is None:
+            raise CryptoError("MKissa key manager HTTP client is not active")
+
         host = urlparse(self.site_url).hostname or ""
         url = f"{self.api_url}{_BOOTSTRAP_PATH}"
         params = {"buildId": build_id, "k": _ANIME_LANE}
@@ -247,7 +250,10 @@ class MKissaKeyManager:
         return None, saw_stale
 
     async def _resolve_build(self) -> BuildInfo | None:
-        session = await self._ensure_session()
+        session = self._http.session
+        if session is None:
+            raise CryptoError("MKissa key manager HTTP client is not active")
+
         try:
             async with session.get(f"{self.site_url}/") as response:
                 if response.status < 200 or response.status >= 300:
@@ -281,7 +287,9 @@ class MKissaKeyManager:
         return None
 
     async def _parse_chunk(self, url: str) -> BuildInfo | None:
-        session = await self._ensure_session()
+        session = self._http.session
+        if session is None:
+            return None
         async with session.get(url) as response:
             if response.status < 200 or response.status >= 300:
                 return None
@@ -289,16 +297,6 @@ class MKissaKeyManager:
         if _CRYPTO_CHUNK_MARKER not in body:
             return None
         return MKissaBundle.parse(body)
-
-    async def _ensure_session(self) -> aiohttp.ClientSession:
-        session = self._session
-        if session is not None and not session.closed:
-            return session
-        if self._session_factory is None:
-            raise CryptoError("MKissa key manager has no active HTTP session")
-        session = await self._session_factory()
-        self._session = session
-        return session
 
     @staticmethod
     def _get_epoch_candidates() -> list[int]:

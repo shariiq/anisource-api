@@ -5,21 +5,24 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from anime_extensions.base import BaseSource
+from anime_extensions.core import Source, SourceCapability, SourceMetadata
 from anime_extensions.exceptions import AnimeExtensionError
 from anime_extensions.models import Anime, Episode, Server, Stream, Subtitle
 from anime_extensions_api.app import create_app
 from anime_extensions_api.config import APISettings, CacheSettings
-from anime_extensions_api.services.cache import api_cache
-from anime_extensions_api.services.source_manager import source_manager
+from anime_extensions_api.services.cache import AsyncTTLCache
+from anime_extensions_api.services.source_manager import SourceManager
 
 
-class MockSource(BaseSource):
+class MockSource(Source):
     """Mock anime source for fast, deterministic unit testing."""
 
-    name = "MockSource"
-    id = "mock"
-    base_url = "https://mock.example.com"
+    metadata = SourceMetadata(
+        id="mock",
+        name="MockSource",
+        base_url="https://mock.example.com",
+        capabilities={SourceCapability.SEARCH, SourceCapability.DETAILS},
+    )
 
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         if page > 2:
@@ -113,24 +116,23 @@ class MockSource(BaseSource):
         ]
 
 
-@pytest.fixture(autouse=True)
-def setup_test_source_and_cache():
-    """Setup mock source registry and reset cache before each test."""
-    api_cache.clear()
-    mock_src = MockSource()
-    source_manager._registry["mock"] = mock_src
-    source_manager._registry["aniwaves"] = MockSource()
-    source_manager._registry["anikoto"] = MockSource()
-    yield
-    api_cache.clear()
-
-
 @pytest.fixture
-def app():
+async def app():
+    """Create an initialized application with an injected mock source."""
     settings = APISettings(
         cache=CacheSettings(enabled=True, popular_ttl_seconds=60),
     )
-    return create_app(settings)
+    app = create_app(settings)
+    source_manager = SourceManager()
+    await source_manager.initialize()
+    source_manager._runtime.sources.register(MockSource)
+    app.state.source_manager = source_manager
+    app.state.cache = AsyncTTLCache(max_items=1000)
+    try:
+        yield app
+    finally:
+        await source_manager.close()
+        app.state.cache.clear()
 
 
 @pytest.mark.asyncio
@@ -194,7 +196,7 @@ async def test_anime_popular_and_cache(app):
         res_cached = await client.get("/api/v1/mock/popular?page=1")
         assert res_cached.status_code == 200
         assert res_cached.json()["items"][0]["title"] == "Mock Anime 1"
-        assert api_cache.hits >= 1
+        assert app.state.cache.hits >= 1
 
 
 @pytest.mark.asyncio

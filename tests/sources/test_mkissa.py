@@ -1,6 +1,6 @@
 """Deterministic tests for MKissa source."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -66,8 +66,12 @@ EPISODES_RESPONSE = {
 
 
 @pytest.fixture
-def source():
-    return MKissa()
+def source() -> MKissa:
+    context = MagicMock()
+    context.http = MagicMock()
+    context.extractors = MagicMock()
+    context.runtime = MagicMock()
+    return MKissa(context=context)
 
 
 @pytest.mark.asyncio

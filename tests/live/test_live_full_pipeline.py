@@ -31,14 +31,19 @@ def _bounded(items: Iterable[Any], maximum: int) -> list[Any]:
 
 @pytest.mark.asyncio
 @pytest.mark.live
-@pytest.mark.parametrize("source_class", SOURCES, ids=lambda source: source.id)
+@pytest.mark.parametrize("source_class", SOURCES, ids=lambda source: source.metadata.id)
 async def test_source_full_pipeline(source_class: type[Any]) -> None:
     """Return at least one usable HTTP(S) stream from every source pipeline."""
-    source = source_class()
+    from anime_extensions.core import ExtensionRuntime
+
+    runtime = ExtensionRuntime()
+    await runtime.start()
+    runtime.sources.register(source_class)
+    source = runtime.get_source(source_class.metadata.id)
     diagnostics: list[str] = []
     try:
         candidates = await _search_candidates(source, diagnostics)
-        assert candidates, f"{source.name}: no search results; {' | '.join(diagnostics)}"
+        assert candidates, f"{source.metadata.name}: no search results; {' | '.join(diagnostics)}"
 
         for candidate in candidates:
             try:
@@ -62,13 +67,13 @@ async def test_source_full_pipeline(source_class: type[Any]) -> None:
 
             streams = await _streams_from_candidate(source, episodes, diagnostics)
             if streams:
-                _assert_playable_streams(source.name, streams)
-                log.info("%s pipeline passed with %d stream(s)", source.name, len(streams))
+                _assert_playable_streams(source.metadata.name, streams)
+                log.info("%s pipeline passed with %d stream(s)", source.metadata.name, len(streams))
                 return
 
-        pytest.fail(f"{source.name}: no playable streams; {' | '.join(diagnostics)}")
+        pytest.fail(f"{source.metadata.name}: no playable streams; {' | '.join(diagnostics)}")
     finally:
-        await source.close()
+        await runtime.close()
 
 
 async def _search_candidates(source: Any, diagnostics: list[str]) -> list[Anime]:

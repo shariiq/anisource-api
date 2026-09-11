@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Query
 
 from ..config import get_settings
+from ..dependencies import CacheDep, ManagerDep
 from ..schemas import ServerSchema, StreamSchema
-from ..services.cache import api_cache
-from ..services.source_manager import source_manager
 
 log = logging.getLogger(__name__)
 
@@ -27,27 +27,27 @@ router = APIRouter(tags=["Streams & Servers"])
 async def get_servers(
     source_id: str,
     episode_id: str,
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> list[ServerSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:servers:{episode_id}"
-    if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return [ServerSchema.model_validate(srv) for srv in cached_data]
+    async def fetch() -> list[dict[str, Any]]:
+        servers = await source.get_servers(episode_id=episode_id)
+        items = [ServerSchema.model_validate(srv) for srv in servers]
+        return [item.model_dump() for item in items]
 
-    servers = await source.get_servers(episode_id=episode_id)
-    items = [ServerSchema.model_validate(srv.to_dict()) for srv in servers]
-
+    cache_key = f"{source.metadata.id}:servers:{episode_id}"
     if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            [item.model_dump() for item in items],
-            ttl_seconds=settings.cache.servers_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.servers_ttl_seconds
         )
+        return [ServerSchema.model_validate(srv) for srv in data]
 
-    return items
+    data = await fetch()
+    return [ServerSchema.model_validate(srv) for srv in data]
 
 
 @router.get(
@@ -64,24 +64,24 @@ async def get_streams(
     server_id: str = Query(
         ..., description="Server identifier obtained from the /servers endpoint."
     ),
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> list[StreamSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:streams:{episode_id}:{server_id}"
-    if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return [StreamSchema.model_validate(stream) for stream in cached_data]
+    async def fetch() -> list[dict[str, Any]]:
+        streams = await source.get_streams(episode_id=episode_id, server_id=server_id)
+        items = [StreamSchema.model_validate(stream) for stream in streams]
+        return [item.model_dump() for item in items]
 
-    streams = await source.get_streams(episode_id=episode_id, server_id=server_id)
-    items = [StreamSchema.model_validate(stream.to_dict()) for stream in streams]
-
+    cache_key = f"{source.metadata.id}:streams:{episode_id}:{server_id}"
     if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            [item.model_dump() for item in items],
-            ttl_seconds=settings.cache.streams_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.streams_ttl_seconds
         )
+        return [StreamSchema.model_validate(stream) for stream in data]
 
-    return items
+    data = await fetch()
+    return [StreamSchema.model_validate(stream) for stream in data]

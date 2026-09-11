@@ -6,16 +6,21 @@ import json
 import logging
 import re
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from ...base import BaseSource
-from ...exceptions import CryptoError, HttpError, ParsingError
+from ...core.errors import CryptoError, HttpError, ParsingError
+from ...core.metadata import SourceCapability, SourceMetadata
+from ...core.registry import register_source
+from ...core.source import Source
 from ...models import Anime, Episode, Server, Stream, Subtitle
 from ...utils.mkissa_crypto import MKissaCrypto
 from .key_manager import MKissaKeyManager
+
+if TYPE_CHECKING:
+    from ...core.runtime import SourceContext
 
 log = logging.getLogger(__name__)
 
@@ -56,22 +61,48 @@ _INTERNAL_HOSTER_PATTERNS = tuple(
 )
 
 
-class MKissa(BaseSource):
+@register_source
+class MKissa(Source):
     """MKissa anime source."""
 
-    name = "MKissa"
-    id = "mkissa"
-    base_url = "https://mkissa.to"
+    metadata = SourceMetadata(
+        id="mkissa",
+        name="MKissa",
+        base_url="https://mkissa.to",
+        capabilities=frozenset(
+            {
+                SourceCapability.POPULAR,
+                SourceCapability.LATEST,
+                SourceCapability.SEARCH,
+                SourceCapability.DETAILS,
+                SourceCapability.EPISODES,
+                SourceCapability.SERVERS,
+                SourceCapability.STREAMS,
+            }
+        ),
+        domains=("mkissa.to", "mkissa.net", "api.mkissa.net"),
+    )
+    id = metadata.id
+    base_url = metadata.base_url
     api_url = "https://api.mkissa.net"
 
-    def __init__(self, *, session: Any = None) -> None:
-        super().__init__(session=session)
+    def __init__(self, context: SourceContext) -> None:
+        super().__init__(context)
         self.key_manager = MKissaKeyManager(
-            session=session,
+            http_client=context.http,
             site_url=self.base_url,
             api_url=self.api_url,
-            session_factory=self._ensure_session,
         )
+
+    async def _get_json(
+        self,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
+    ) -> Any:
+        """Fetch JSON through the runtime-owned HTTP client."""
+        return await self.context.http.get_json(url, headers=headers, params=params)
 
     async def _graphql_request(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         """Make a GraphQL POST request to the MKissa API."""
@@ -86,7 +117,9 @@ class MKissa(BaseSource):
         }
 
         try:
-            data = await self._post_json(f"{self.api_url}/api", json_data=payload, headers=headers)
+            data = await self.context.http.post_json(
+                f"{self.api_url}/api", json_data=payload, headers=headers
+            )
         except (HttpError, ParsingError) as error:
             log.warning("MKissa GraphQL request failed: %s", error)
             return {}
@@ -395,7 +428,9 @@ class MKissa(BaseSource):
             "x-build-id": material.build_id,
             "Referer": f"{self.base_url}/",
         }
-        session = await self._ensure_session()
+        session = self.context.http.session
+        if session is None:
+            raise RuntimeError("Extension runtime HTTP client is not active")
         async with session.get(f"{self.api_url}/api", params=params, headers=headers) as response:
             if response.status < 200 or response.status >= 300:
                 raise HttpError(

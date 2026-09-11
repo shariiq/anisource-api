@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Query
 
 from ..config import get_settings
+from ..dependencies import CacheDep, ManagerDep
 from ..schemas import (
     AnimeSchema,
     EpisodeSchema,
     PaginatedResponse,
 )
-from ..services.cache import api_cache
-from ..services.source_manager import source_manager
 
 log = logging.getLogger(__name__)
 
@@ -31,39 +31,32 @@ router = APIRouter(tags=["Anime"])
 async def get_popular(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:popular:{page}"
+    async def fetch() -> dict[str, Any]:
+        animes, has_next = await source.get_popular(page=page)
+        items = [AnimeSchema.model_validate(anime) for anime in animes]
+        return {
+            "items": [item.model_dump() for item in items],
+            "page": page,
+            "has_next": has_next,
+            "total_returned": len(items),
+        }
+
+    cache_key = f"{source.metadata.id}:popular:{page}"
     if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return PaginatedResponse[AnimeSchema](**cached_data)
-
-    animes, has_next = await source.get_popular(page=page)
-
-    items = [AnimeSchema.model_validate(anime.to_dict()) for anime in animes]
-    response_data = {
-        "items": items,
-        "page": page,
-        "has_next": has_next,
-        "total_returned": len(items),
-    }
-
-    if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            {
-                "items": [item.model_dump() for item in items],
-                "page": page,
-                "has_next": has_next,
-                "total_returned": len(items),
-            },
-            ttl_seconds=settings.cache.popular_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.popular_ttl_seconds
         )
+        return PaginatedResponse[AnimeSchema](**data)
 
-    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
+    data = await fetch()
+    return PaginatedResponse[AnimeSchema](**data)
 
 
 @router.get(
@@ -77,39 +70,32 @@ async def get_popular(
 async def get_latest(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:latest:{page}"
+    async def fetch() -> dict[str, Any]:
+        animes, has_next = await source.get_latest(page=page)
+        items = [AnimeSchema.model_validate(anime) for anime in animes]
+        return {
+            "items": [item.model_dump() for item in items],
+            "page": page,
+            "has_next": has_next,
+            "total_returned": len(items),
+        }
+
+    cache_key = f"{source.metadata.id}:latest:{page}"
     if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return PaginatedResponse[AnimeSchema](**cached_data)
-
-    animes, has_next = await source.get_latest(page=page)
-
-    items = [AnimeSchema.model_validate(anime.to_dict()) for anime in animes]
-    response_data = {
-        "items": items,
-        "page": page,
-        "has_next": has_next,
-        "total_returned": len(items),
-    }
-
-    if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            {
-                "items": [item.model_dump() for item in items],
-                "page": page,
-                "has_next": has_next,
-                "total_returned": len(items),
-            },
-            ttl_seconds=settings.cache.latest_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.latest_ttl_seconds
         )
+        return PaginatedResponse[AnimeSchema](**data)
 
-    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
+    data = await fetch()
+    return PaginatedResponse[AnimeSchema](**data)
 
 
 @router.get(
@@ -124,39 +110,32 @@ async def search_anime(
     source_id: str,
     q: str = Query(..., min_length=1, description="Search query string."),
     page: int = Query(1, ge=1, description="Page number to fetch."),
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:search:{q}:{page}"
+    async def fetch() -> dict[str, Any]:
+        animes, has_next = await source.search(query=q, page=page)
+        items = [AnimeSchema.model_validate(anime) for anime in animes]
+        return {
+            "items": [item.model_dump() for item in items],
+            "page": page,
+            "has_next": has_next,
+            "total_returned": len(items),
+        }
+
+    cache_key = f"{source.metadata.id}:search:{q}:{page}"
     if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return PaginatedResponse[AnimeSchema](**cached_data)
-
-    animes, has_next = await source.search(query=q, page=page)
-
-    items = [AnimeSchema.model_validate(anime.to_dict()) for anime in animes]
-    response_data = {
-        "items": items,
-        "page": page,
-        "has_next": has_next,
-        "total_returned": len(items),
-    }
-
-    if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            {
-                "items": [item.model_dump() for item in items],
-                "page": page,
-                "has_next": has_next,
-                "total_returned": len(items),
-            },
-            ttl_seconds=settings.cache.search_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.search_ttl_seconds
         )
+        return PaginatedResponse[AnimeSchema](**data)
 
-    return PaginatedResponse[AnimeSchema](**response_data)  # type: ignore[arg-type]
+    data = await fetch()
+    return PaginatedResponse[AnimeSchema](**data)
 
 
 @router.get(
@@ -170,27 +149,27 @@ async def search_anime(
 async def get_anime_details(
     source_id: str,
     anime_id: str,
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> AnimeSchema:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:details:{anime_id}"
-    if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return AnimeSchema.model_validate(cached_data)
+    async def fetch() -> dict[str, Any]:
+        anime = await source.get_details(anime_id=anime_id)
+        item = AnimeSchema.model_validate(anime)
+        return item.model_dump()
 
-    anime = await source.get_details(anime_id=anime_id)
-    item = AnimeSchema.model_validate(anime.to_dict())
-
+    cache_key = f"{source.metadata.id}:details:{anime_id}"
     if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            item.model_dump(),
-            ttl_seconds=settings.cache.details_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.details_ttl_seconds
         )
+        return AnimeSchema.model_validate(data)
 
-    return item
+    data = await fetch()
+    return AnimeSchema.model_validate(data)
 
 
 @router.get(
@@ -204,24 +183,24 @@ async def get_anime_details(
 async def get_episodes(
     source_id: str,
     anime_id: str,
+    *,
+    source_manager: ManagerDep,
+    cache: CacheDep,
 ) -> list[EpisodeSchema]:
     source = source_manager.get_source(source_id)
     settings = get_settings()
 
-    cache_key = f"{source.id}:episodes:{anime_id}"
-    if settings.cache.enabled:
-        cached_data = await api_cache.get(cache_key)
-        if cached_data is not None:
-            return [EpisodeSchema.model_validate(ep) for ep in cached_data]
+    async def fetch() -> list[dict[str, Any]]:
+        episodes = await source.get_episodes(anime_id=anime_id)
+        items = [EpisodeSchema.model_validate(ep) for ep in episodes]
+        return [item.model_dump() for item in items]
 
-    episodes = await source.get_episodes(anime_id=anime_id)
-    items = [EpisodeSchema.model_validate(ep.to_dict()) for ep in episodes]
-
+    cache_key = f"{source.metadata.id}:episodes:{anime_id}"
     if settings.cache.enabled:
-        await api_cache.set(
-            cache_key,
-            [item.model_dump() for item in items],
-            ttl_seconds=settings.cache.episodes_ttl_seconds,
+        data = await cache.get_or_set(
+            cache_key, fetch, ttl_seconds=settings.cache.episodes_ttl_seconds
         )
+        return [EpisodeSchema.model_validate(ep) for ep in data]
 
-    return items
+    data = await fetch()
+    return [EpisodeSchema.model_validate(ep) for ep in data]

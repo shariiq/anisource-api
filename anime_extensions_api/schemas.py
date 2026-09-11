@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")
 
@@ -20,6 +20,8 @@ T = TypeVar("T")
 
 
 class AnimeSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Schema representing an anime's metadata and details."""
 
     id: str = Field(..., description="Source-specific unique identifier for the anime.")
@@ -41,6 +43,8 @@ class AnimeSchema(BaseModel):
 
 
 class EpisodeSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Schema representing a single playable episode."""
 
     id: str = Field(..., description="Source-specific unique identifier for the episode.")
@@ -54,6 +58,8 @@ class EpisodeSchema(BaseModel):
 
 
 class ServerSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Schema representing an available video streaming server for an episode."""
 
     id: str = Field(..., description="Source-specific unique identifier for the server.")
@@ -64,6 +70,8 @@ class ServerSchema(BaseModel):
 
 
 class SubtitleSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Schema representing a subtitle track for a video stream."""
 
     url: str = Field(..., description="Direct URL to the subtitle file (VTT/SRT/ASS).")
@@ -72,6 +80,8 @@ class SubtitleSchema(BaseModel):
 
 
 class StreamSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     """Schema representing a playable video stream and its configurations."""
 
     url: str = Field(..., description="Direct playback URL (MP4, M3U8, etc).")

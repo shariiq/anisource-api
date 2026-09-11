@@ -1,6 +1,6 @@
 """Deterministic tests for AniWaves HTML and server parsing."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -51,7 +51,11 @@ SERVERS_HTML = """
 
 @pytest.fixture
 def source() -> AniWaves:
-    return AniWaves(domain="aniwaves.example")
+    context = MagicMock()
+    context.http = MagicMock()
+    context.extractors = MagicMock()
+    context.runtime = MagicMock()
+    return AniWaves(context=context, domain="aniwaves.example")
 
 
 def test_parse_listing_prefers_japanese_title_and_detects_pagination(source: AniWaves):
@@ -119,19 +123,22 @@ async def test_get_servers_normalizes_names_and_types(source: AniWaves):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("embed_url", "method"),
+    ("embed_url", "extractor_name"),
     [
-        ("https://dood.to/e/abc", "_extract_from_dood"),
-        ("https://filemoon.sx/e/abc", "_extract_from_byse"),
-        ("https://vidplay.example/e/abc", "_extract_from_echovideo"),
+        ("https://dood.to/e/abc", "Doodstream"),
+        ("https://filemoon.sx/e/abc", "Byse"),
+        ("https://vidplay.example/e/abc", "EchoVideo"),
     ],
 )
-async def test_get_streams_routes_by_host(source: AniWaves, embed_url: str, method: str):
-    """Test host-based routing keeps source orchestration separate from extraction."""
+async def test_get_streams_routes_by_host(source: AniWaves, embed_url: str, extractor_name: str):
+    """Test host-based routing delegates to the runtime extractor registry."""
     source._get_embed_url = AsyncMock(return_value=embed_url)
-    routed = AsyncMock(return_value=[])
-    setattr(source, method, routed)
+    extractor = MagicMock(name=extractor_name)
+    extractor.name = extractor_name
+    extractor.extract = AsyncMock(return_value=[])
+    source.context.runtime.resolve_extractor.return_value = extractor
 
     await source.get_streams("id-one&epurl=/watch/naruto/ep-1", "server-1")
 
-    routed.assert_awaited_once()
+    source.context.runtime.resolve_extractor.assert_called_once_with(embed_url)
+    extractor.extract.assert_awaited_once()

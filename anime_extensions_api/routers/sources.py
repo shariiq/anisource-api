@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ..dependencies import ManagerDep
 from ..schemas import SourceInfoResponse, SourceListResponse
-from ..services.source_manager import source_manager
 
 router = APIRouter(prefix="/sources", tags=["Sources"])
 
@@ -16,12 +16,15 @@ router = APIRouter(prefix="/sources", tags=["Sources"])
     summary="List all available anime sources",
     description="Returns metadata for all scraper extensions currently registered in the API.",
 )
-async def list_sources() -> SourceListResponse:
+async def list_sources(
+    *,
+    source_manager: ManagerDep,
+) -> SourceListResponse:
     sources = [
         SourceInfoResponse(
-            id=src.id,
-            name=src.name,
-            base_url=src.base_url,
+            id=src.metadata.id,
+            name=src.metadata.name,
+            base_url=src.metadata.base_url,
         )
         for src in source_manager.list_sources()
     ]
@@ -34,10 +37,14 @@ async def list_sources() -> SourceListResponse:
     summary="Get source details",
     description="Returns metadata for a specific scraper extension by ID.",
 )
-async def get_source(source_id: str) -> SourceInfoResponse:
+async def get_source(
+    source_id: str,
+    *,
+    source_manager: ManagerDep,
+) -> SourceInfoResponse:
     src = source_manager.get_source(source_id)
     return SourceInfoResponse(
-        id=src.id,
-        name=src.name,
-        base_url=src.base_url,
+        id=src.metadata.id,
+        name=src.metadata.name,
+        base_url=src.metadata.base_url,
     )

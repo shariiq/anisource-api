@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from ..base import BaseExtractor
+from ..core.extractor import Extractor
+from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
 from ..utils.m3u8 import parse_m3u8_streams
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -25,8 +29,11 @@ DATSAV_QUALITY_LABELS = {
 }
 
 
-class EchoVideoExtractor(BaseExtractor):
+@register_extractor(r"vidplay|mycloud|datsav|echovideo")
+class EchoVideoExtractor(Extractor):
     """Extractor for Vidplay / MyCloud / DatSaV (play.echovideo.ru family)."""
+
+    name = "EchoVideo"
 
     async def extract(
         self,
@@ -36,7 +43,10 @@ class EchoVideoExtractor(BaseExtractor):
         """Extract streams from EchoVideo embed URL."""
         embed_url = url
         label_prefix = kwargs.get("label_prefix", "")
-        session = await self._ensure_session()
+        session = self.context.http.session
+        if not session:
+            return []
+
         parsed = urlparse(embed_url)
         host = parsed.netloc
 

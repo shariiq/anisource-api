@@ -1,6 +1,6 @@
 """Deterministic tests for Anikoto HTML and VRF parsing."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -51,7 +51,11 @@ SERVERS_HTML = """
 
 @pytest.fixture
 def source() -> Anikoto:
-    return Anikoto(domain="anikoto.example")
+    context = MagicMock()
+    context.http = MagicMock()
+    context.extractors = MagicMock()
+    context.runtime = MagicMock()
+    return Anikoto(context=context, domain="anikoto.example")
 
 
 def test_vrf_encrypt_deterministic():
@@ -124,6 +128,20 @@ async def test_get_servers_filters_downloads_and_resolves_types(source: Anikoto)
     assert servers[0].type == "sub"
     assert servers[1].type == "h-sub"
     assert servers[2].type == "dub"
+
+
+@pytest.mark.asyncio
+async def test_get_streams_resolves_registered_extractor(source: Anikoto):
+    """Test external embeds delegate to the runtime extractor registry."""
+    source._get_embed_link = AsyncMock(return_value="https://dood.to/e/abc")
+    extractor = MagicMock()
+    extractor.extract = AsyncMock(return_value=[])
+    source.context.runtime.resolve_extractor.return_value = extractor
+
+    await source.get_streams("ep-id-1&epurl=/watch/frieren-1/ep-1", "srv-1")
+
+    source.context.runtime.resolve_extractor.assert_called_once_with("https://dood.to/e/abc")
+    extractor.extract.assert_awaited_once_with("https://dood.to/e/abc", label_prefix="")
 
 
 def test_resolve_video_type(source: Anikoto):

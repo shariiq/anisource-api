@@ -1,6 +1,7 @@
 """Deterministic stream-resolution tests for MKissa."""
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -56,7 +57,8 @@ def test_source_urls_supports_decrypted_top_level_episode() -> None:
 @pytest.mark.asyncio
 async def test_stream_resolution_preserves_direct_url_and_priority() -> None:
     """Direct HTTP sources remain usable without an unnecessary extractor round trip."""
-    source = MKissa()
+    context = MagicMock()
+    source = MKissa(context=context)
 
     streams = await source._streams_from_sources(
         [
@@ -75,7 +77,8 @@ async def test_stream_resolution_preserves_direct_url_and_priority() -> None:
 @pytest.mark.asyncio
 async def test_internal_source_resolves_hls_subtitles(monkeypatch: pytest.MonkeyPatch) -> None:
     """Resolve MKissa's internal player JSON endpoint into a playable HLS stream."""
-    source = MKissa()
+    context = MagicMock()
+    source = MKissa(context=context)
 
     async def get_json(url: str, **_: object) -> object:
         assert url == "https://allanime.day/apivtwo/clock.json?id=42"

@@ -7,19 +7,26 @@ import re
 import secrets
 import string
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from ..base import BaseExtractor
+from ..core.extractor import Extractor
+from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
+
+if TYPE_CHECKING:
+    pass
 
 log = logging.getLogger(__name__)
 
 
-class DoodExtractor(BaseExtractor):
+@register_extractor(r"dood|myvidplay|ds2play|doodstream")
+class DoodExtractor(Extractor):
     """Extractor for Doodstream and its mirrors (e.g. myvidplay, dood.to, etc.)."""
+
+    name = "Doodstream"
 
     async def extract(
         self,
@@ -30,7 +37,10 @@ class DoodExtractor(BaseExtractor):
         **kwargs: Any,
     ) -> list[Stream]:
         """Extract video streams from Doodstream URL."""
-        session = await self._ensure_session()
+        session = self.context.http.session
+        if not session:
+            return []
+
         subs = external_subs or []
 
         try:

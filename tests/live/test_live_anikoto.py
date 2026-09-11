@@ -9,8 +9,11 @@ from anime_extensions.sources.anikoto import Anikoto
 @pytest.fixture
 async def anikoto_source():
     """Provide an initialized Anikoto source for tests."""
-    async with Anikoto() as source:
-        yield source
+    from anime_extensions.core import ExtensionRuntime
+
+    async with ExtensionRuntime() as runtime:
+        runtime.sources.register(Anikoto)
+        yield runtime.get_source("anikoto")
 
 
 @pytest.mark.live

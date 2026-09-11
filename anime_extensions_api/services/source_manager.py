@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import logging
 
-import aiohttp
-
-from anime_extensions import Anikoto, AniWaves, MKissa
-from anime_extensions.base import BaseSource
+from anime_extensions.core.runtime import ExtensionRuntime
+from anime_extensions.core.source import Source
 from anime_extensions.exceptions import AnimeExtensionError
 
 log = logging.getLogger(__name__)
@@ -21,68 +19,52 @@ class SourceNotFoundError(AnimeExtensionError):
 
 
 class SourceManager:
-    """Centralized registry and session manager for anime sources.
+    """Centralized registry and lifecycle manager for anime sources.
 
-    Maintains a core aiohttp ClientSession and ensures all sources
-    route requests through it to pool connections and avoid exhaustion.
+    Wraps ExtensionRuntime to provide clean API-layer access to sources
+    with proper HTTP client lifecycle management.
     """
 
     def __init__(self) -> None:
-        self._session: aiohttp.ClientSession | None = None
-        self._registry: dict[str, BaseSource] = {}
+        self._runtime: ExtensionRuntime | None = None
 
     async def initialize(self) -> None:
-        """Initialize the shared aiohttp session and instantiate all sources."""
-        log.info("Initializing SourceManager and connection pools...")
-        if self._session is None or self._session.closed:
-            # Custom TCPConnector for performance and disabling SSL verify broadly (like the base classes)
-            connector = aiohttp.TCPConnector(ssl=False, limit=100)
-            timeout = aiohttp.ClientTimeout(total=45)
-            self._session = aiohttp.ClientSession(
-                connector=connector,
-                timeout=timeout,
-            )
-
-        # Register known sources
-        aniwaves = AniWaves(session=self._session)
-        anikoto = Anikoto(session=self._session)
-        mkissa = MKissa(session=self._session)
-
-        # Initialize internal state if needed
-        await aniwaves._ensure_session()
-        await anikoto._ensure_session()
-        await mkissa._ensure_session()
-
-        self._registry[aniwaves.id] = aniwaves
-        self._registry[anikoto.id] = anikoto
-        self._registry[mkissa.id] = mkissa
-
-        log.info(f"Successfully registered sources: {list(self._registry.keys())}")
+        """Initialize the extension runtime and all registered sources."""
+        log.info("Initializing SourceManager and ExtensionRuntime...")
+        self._runtime = ExtensionRuntime()
+        await self._runtime.start()
+        log.info(
+            "Successfully registered sources: %s",
+            [source.metadata.id for source in self._runtime.sources.list_all()],
+        )
 
     async def close(self) -> None:
-        """Gracefully close the shared session."""
+        """Gracefully close the runtime and release resources."""
         log.info("Shutting down SourceManager...")
-        if self._session and not self._session.closed:
-            await self._session.close()
-        self._session = None
-        self._registry.clear()
+        if self._runtime:
+            await self._runtime.close()
+            self._runtime = None
         log.info("SourceManager shutdown complete.")
 
-    def get_source(self, source_id: str) -> BaseSource:
+    def get_source(self, source_id: str) -> Source:
         """Retrieve a source instance by its ID.
 
         Raises:
             SourceNotFoundError if the source is not registered.
         """
-        source = self._registry.get(source_id.lower())
-        if not source:
+        if not self._runtime:
+            raise AnimeExtensionError("SourceManager not initialized")
+
+        source = self._runtime.get_source(source_id)
+        if source is None:
             raise SourceNotFoundError(source_id)
         return source
 
-    def list_sources(self) -> list[BaseSource]:
+    def list_sources(self) -> list[Source]:
         """Return all registered source instances."""
-        return list(self._registry.values())
-
-
-# Global singleton manager for the FastAPI app
-source_manager = SourceManager()
+        if not self._runtime:
+            raise AnimeExtensionError("SourceManager not initialized")
+        return [
+            source_cls(context=self._runtime.context)
+            for source_cls in self._runtime.sources.list_all()
+        ]

@@ -9,8 +9,11 @@ from anime_extensions.sources.aniwaves import AniWaves
 @pytest.fixture
 async def aniwaves_source():
     """Provide an initialized AniWaves source for tests."""
-    async with AniWaves() as source:
-        yield source
+    from anime_extensions.core import ExtensionRuntime
+
+    async with ExtensionRuntime() as runtime:
+        runtime.sources.register(AniWaves)
+        yield runtime.get_source("aniwaves")
 
 
 @pytest.mark.live

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from anime_extensions.exceptions import ExtractorError
+from anime_extensions.core.errors import ExtractorError
 from anime_extensions.extractors.byse import ByseExtractor
 from anime_extensions.models import Stream
 
@@ -18,10 +18,18 @@ def _async_ctx(resp):
     return ctx
 
 
+@pytest.fixture
+def mock_context():
+    ctx = MagicMock()
+    ctx.http = MagicMock()
+    ctx.http.session = MagicMock()
+    return ctx
+
+
 @pytest.mark.asyncio
-async def test_byse_extractor_challenge_and_playback_flow():
+async def test_byse_extractor_challenge_and_playback_flow(mock_context):
     """Test challenge, attestation, PoW verification, and playback parsing."""
-    extractor = ByseExtractor()
+    extractor = ByseExtractor(context=mock_context)
 
     decrypted_playback = json.dumps(
         {
@@ -56,11 +64,9 @@ async def test_byse_extractor_challenge_and_playback_flow():
         mock_resp.json = AsyncMock(return_value=data)
         mock_responses.append(_async_ctx(mock_resp))
 
-    mock_session = MagicMock()
-    mock_session.post.side_effect = mock_responses
+    mock_context.http.session.post.side_effect = mock_responses
 
     with (
-        patch.object(extractor, "_ensure_session", return_value=mock_session),
         patch(
             "anime_extensions.extractors.byse.generate_byse_keypair_and_attestation",
             return_value=({"kty": "EC"}, "signature"),
@@ -87,30 +93,22 @@ async def test_byse_extractor_challenge_and_playback_flow():
 
 
 @pytest.mark.asyncio
-async def test_byse_extractor_rejects_failed_challenge():
+async def test_byse_extractor_rejects_failed_challenge(mock_context):
     """Test a non-success challenge response raises a useful extractor error."""
-    extractor = ByseExtractor()
+    extractor = ByseExtractor(context=mock_context)
     mock_resp = MagicMock()
     mock_resp.status = 403
-    mock_session = MagicMock()
-    mock_session.post.return_value = _async_ctx(mock_resp)
+    mock_context.http.session.post.return_value = _async_ctx(mock_resp)
 
-    with (
-        patch.object(extractor, "_ensure_session", return_value=mock_session),
-        pytest.raises(ExtractorError, match="challenge failed with status 403"),
-    ):
+    with pytest.raises(ExtractorError, match="challenge failed with status 403"):
         await extractor.extract("https://byse.example/embed/media-123")
 
 
 @pytest.mark.asyncio
-async def test_byse_extractor_requires_media_id():
+async def test_byse_extractor_requires_media_id(mock_context):
     """Test malformed embed paths fail before making any network request."""
-    extractor = ByseExtractor()
-    mock_session = MagicMock()
+    extractor = ByseExtractor(context=mock_context)
 
-    with (
-        patch.object(extractor, "_ensure_session", return_value=mock_session),
-        pytest.raises(ExtractorError, match="could not read media id"),
-    ):
+    with pytest.raises(ExtractorError, match="could not read media id"):
         await extractor.extract("https://byse.example/embed")
-    mock_session.post.assert_not_called()
+    mock_context.http.session.post.assert_not_called()

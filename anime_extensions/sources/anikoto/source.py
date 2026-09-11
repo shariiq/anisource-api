@@ -4,41 +4,82 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import logging
 import re
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from bs4 import BeautifulSoup
 
-from ...base import BaseSource
+from ...core.errors import ExtractorError
+from ...core.metadata import SourceCapability, SourceMetadata
+from ...core.registry import register_source
+from ...core.source import Source
 from ...models import Anime, Episode, Server, Stream, Subtitle
 from ...utils.crypto import vrf_encrypt
 
-# === Anikoto Source ===
+if TYPE_CHECKING:
+    from ...core.runtime import SourceContext
+
+log = logging.getLogger(__name__)
 
 
-class Anikoto(BaseSource):
+@register_source
+class Anikoto(Source):
     """Anikoto anime source."""
 
-    name = "Anikoto"
-    id = "anikoto"
-    base_url = "https://anikototv.to"
+    metadata = SourceMetadata(
+        id="anikoto",
+        name="Anikoto",
+        base_url="https://anikototv.to",
+        capabilities=frozenset(
+            {
+                SourceCapability.POPULAR,
+                SourceCapability.LATEST,
+                SourceCapability.SEARCH,
+                SourceCapability.DETAILS,
+                SourceCapability.EPISODES,
+                SourceCapability.SERVERS,
+                SourceCapability.STREAMS,
+            }
+        ),
+        domains=(
+            "anikototv.to",
+            "anikoto.bz",
+            "anikoto.cz",
+            "anikoto.me",
+            "anikoto.net",
+            "anikototv.se",
+        ),
+    )
+    id = metadata.id
+    base_url = metadata.base_url
 
-    DOMAINS = [
-        "anikototv.to",
-        "anikoto.bz",
-        "anikoto.cz",
-        "anikoto.me",
-        "anikoto.net",
-        "anikototv.se",
-    ]
-
-    def __init__(self, *, domain: str | None = None, session: Any = None) -> None:
-        super().__init__(session=session)
+    def __init__(self, context: SourceContext, *, domain: str | None = None) -> None:
+        """Bind the source to an explicit runtime context."""
+        super().__init__(context)
         if domain:
             self.base_url = f"https://{domain}"
 
-    # === Listing Methods ===
+    async def _request(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> str:
+        """Fetch source content through the runtime-owned HTTP client."""
+        return await self.context.http.get(url, headers=headers, params=params)
+
+    async def _get_json(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        """Fetch source JSON through the runtime-owned HTTP client."""
+        return await self.context.http.get_json(url, headers=headers, params=params)
 
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch popular anime."""
@@ -391,13 +432,21 @@ class Anikoto(BaseSource):
         if not embed_url:
             return []
 
-        # Route to appropriate extractor based on URL pattern
         if "mewcdn.online/player/plyr.php" in embed_url:
             return await self._extract_from_mewcdn(embed_url, server_id)
-        elif embed_url.endswith(".m3u8") or (".m3u8" in embed_url and "/stream/" not in embed_url):
+        if embed_url.endswith(".m3u8") or (".m3u8" in embed_url and "/stream/" not in embed_url):
             return await self._extract_direct_m3u8(embed_url, server_id)
-        else:
+
+        try:
+            extractor = self.context.runtime.resolve_extractor(embed_url)
+        except ExtractorError:
             return await self._extract_from_player(embed_url, server_id, ep_url)
+
+        try:
+            return await extractor.extract(embed_url, label_prefix="")
+        except Exception as error:
+            log.warning("Anikoto stream extraction failed with %s", type(error).__name__)
+            return []
 
     async def _get_embed_link(self, server_id: str, ep_url: str) -> str | None:
         """Get embed URL from server ID."""

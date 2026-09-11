@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from ..base import BaseExtractor
-from ..exceptions import ExtractorError
+from ..core.errors import ExtractorError
+from ..core.extractor import Extractor
+from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
+
+if TYPE_CHECKING:
+    pass
 from ..utils.crypto import (
     b64url_encode,
     decrypt_byse_playback,
@@ -27,8 +31,11 @@ USER_AGENT = (
 )
 
 
-class ByseExtractor(BaseExtractor):
+@register_extractor(r"byse|byfms|filemoon|gn1r5n")
+class ByseExtractor(Extractor):
     """Extractor for Byse/BYFMS video provider."""
+
+    name = "Byse"
 
     def _build_fingerprint(self) -> dict[str, Any]:
         """Construct the client fingerprint payload matching Kotlin ByseExtractor."""
@@ -69,7 +76,10 @@ class ByseExtractor(BaseExtractor):
         embed_origin = kwargs.get("embed_origin", "")
         label_prefix = kwargs.get("label_prefix", "")
 
-        session = await self._ensure_session()
+        session = self.context.http.session
+        if not session:
+            raise ExtractorError("Byse: runtime HTTP client is not started")
+
         parsed_url = urlparse(embed_url)
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
 

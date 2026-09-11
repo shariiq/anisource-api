@@ -1,31 +1,27 @@
-"""Custom exception hierarchy for anime extensions."""
+"""Backward-compatible exports for the core exception hierarchy."""
 
-from __future__ import annotations
+from .core.errors import (
+    AnimeExtensionError,
+    CryptoError,
+    ExtractorError,
+    HttpError,
+    ParsingError,
+    SourceError,
+    TimeoutError,
+    UpstreamNotFound,
+    UpstreamRateLimited,
+    UpstreamUnavailable,
+)
 
-
-class AnimeExtensionError(Exception):
-    """Base exception for all anime extension errors."""
-
-
-class SourceError(AnimeExtensionError):
-    """Raised when an error occurs during anime source operations."""
-
-
-class HttpError(SourceError):
-    """Raised when an HTTP request fails or returns an unexpected status code."""
-
-    def __init__(self, message: str, status_code: int | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-
-
-class ParsingError(SourceError):
-    """Raised when parsing HTML, JSON, or media manifests fails."""
-
-
-class ExtractorError(AnimeExtensionError):
-    """Raised when video stream extraction fails."""
-
-
-class CryptoError(AnimeExtensionError):
-    """Raised when cryptographic challenge solving or decryption fails."""
+__all__ = [
+    "AnimeExtensionError",
+    "CryptoError",
+    "ExtractorError",
+    "HttpError",
+    "ParsingError",
+    "SourceError",
+    "TimeoutError",
+    "UpstreamNotFound",
+    "UpstreamRateLimited",
+    "UpstreamUnavailable",
+]

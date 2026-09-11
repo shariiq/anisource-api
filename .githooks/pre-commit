@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+echo "==> Running pre-commit checks (Ruff lint & format)..."
+
+# Check linting
+uv run ruff check anime_extensions anime_extensions_api tests
+
+# Check formatting
+uv run ruff format --check anime_extensions anime_extensions_api tests
+
+echo "✓ Pre-commit checks passed!"

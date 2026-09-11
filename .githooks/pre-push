@@ -17,6 +17,6 @@ uv run python -m compileall -q anime_extensions anime_extensions_api
 
 # 4. Unit tests
 echo "--> Running unit tests..."
-uv run pytest -q
+uv run python -m pytest -q
 
 echo "✓ Pre-push validation passed!"

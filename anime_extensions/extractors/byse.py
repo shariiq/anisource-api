@@ -27,8 +27,10 @@ USER_AGENT = (
 
 # Maximum time to spend solving the Proof-of-Work challenge.
 # High difficulties (d16+) can take minutes, so we cap it to avoid
-# blocking the event loop indefinitely.
-POW_TIMEOUT_SECONDS = 60
+# blocking the event loop indefinitely. The Kotlin implementation
+# has no explicit timeout (just iteration limit), allowing high-difficulty
+# PoW to complete. We set 3 minutes as a reasonable upper bound.
+POW_TIMEOUT_SECONDS = 180
 
 
 @register_extractor(r"byfms|gn1r5n|bysekoze|byse(?!sayeveum)")

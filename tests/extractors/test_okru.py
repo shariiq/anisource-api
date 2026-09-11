@@ -18,7 +18,7 @@ def _async_ctx(resp):
 def mock_context():
     ctx = MagicMock()
     ctx.http = MagicMock()
-    ctx.http.session = MagicMock()
+    ctx.http.get = AsyncMock()
     return ctx
 
 
@@ -34,11 +34,7 @@ async def test_okru_extractor_direct_videos(mock_context):
     </html>
     """
 
-    mock_resp = MagicMock()
-    mock_resp.status = 200
-    mock_resp.text = AsyncMock(return_value=html_content)
-
-    mock_context.http.session.get.return_value = _async_ctx(mock_resp)
+    mock_context.http.get.return_value = html_content
 
     streams = await extractor.extract("https://ok.ru/videoembed/123456", label_prefix="Okru")
     assert len(streams) == 2

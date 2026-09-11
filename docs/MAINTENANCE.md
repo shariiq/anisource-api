@@ -45,42 +45,56 @@ Popular and latest listings follow the same paginated tuple convention as search
 
 When porting an upstream change, preserve the Python contracts rather than reproducing Kotlin framework plumbing. Port selectors, endpoints, request shapes, VRF logic, decryption behavior, and extractor routing.
 
-## Repair Workflow
+## Repair and Porting Protocol
 
-### 1. Reproduce the failure narrowly
+### 1. Reproduce and classify the failure narrowly
 
-Run the affected live test first:
+Start with the smallest affected unit or live test. Identify the first failed boundary: catalog discovery, details, episodes, server discovery, embed normalization, extractor resolution, hoster extraction, or playlist parsing.
+
+Do not change a downstream extractor for an upstream source-parsing failure, or source parsing for a hoster failure. An HTTP 403, 5xx, timeout, empty response, or malformed response is an observation—not evidence that the Python implementation is wrong. Record the stage, request, response status/content shape, and the exact result before changing behavior.
+
+When a narrow live test is necessary, run only the relevant test:
 
 ```bash
-uv run pytest tests/live/test_live_<source>.py --run-live -v
+uv run pytest tests/live/test_live_<source>.py::<test_name> --run-live -v
 ```
 
-Determine which pipeline boundary fails: discovery, details, episodes, servers, or streams. Avoid changing extractor code for a catalog parsing failure, or source parsing for a hoster failure.
+### 2. Trace the complete Kotlin implementation graph
 
-### 2. Compare upstream behavior
+Before coding, read the corresponding Kotlin source and every implementation that contributes to the affected behavior. This includes:
 
-Inspect the corresponding Kotlin implementation for:
+- source/provider classes, domain and base-URL mappings;
+- catalog, details, episodes, servers, and stream methods;
+- associated hoster extractors, host aliases, and embed provider variants;
+- request utilities, request sequence, cookies, headers, AJAX markers, referer/origin behavior, and URL normalization;
+- VRF, crypto, signatures, encoding, decryption, and other shared helpers; and
+- Kotlin tests or fixtures that establish the expected result.
 
-- base URL and endpoint changes;
-- CSS selectors and HTML structure;
-- query and form parameters;
-- headers, referers, cookies, and AJAX markers;
-- pagination indicators;
-- VRF keys, transformations, or encrypted payload shapes;
-- server labels and embed URL normalization;
-- extractor routing or supported hostnames.
+The Kotlin repository is reference material only. Port observable semantics into the Python architecture; do not copy framework plumbing line-by-line or replace exact behavior with a generic approximation.
 
-Apply only the behavior needed by the Python source or extractor.
+### 3. Write a behavior matrix before implementation
 
-### 3. Update source parsing
+For each changed pipeline boundary, document the evidence needed to compare Kotlin and Python:
+
+| Concern | Record |
+|---|---|
+| Request | Endpoint, method, parameter/body encoding and request order |
+| Request context | Headers, cookies, referer/origin, and AJAX markers |
+| Response | Status, HTML/JSON/encrypted shape, required fields, and error shape |
+| Source parsing | Selectors, opaque IDs, pagination condition, and model fields |
+| Server handoff | Server label, raw embed value, normalized embed URL, and host alias |
+| Extractor | Runtime-selected extractor, token/key/crypto sequence, playlist/direct-file parsing, headers, subtitles, and expected stream URLs |
+
+This matrix prevents changes based on source names, server labels, raw regex inspection, or a single transient response. It also makes it possible to prove whether a defect belongs to the source, extractor, routing, or upstream service.
+
+### 4. Make a minimal, evidence-backed implementation change
 
 For empty listings or missing metadata:
 
-1. Compare the Kotlin selectors with the source implementation under `anime_extensions/sources/<source>/`.
-2. Update the corresponding `BeautifulSoup` selector.
-3. Preserve opaque source IDs exactly; API path routes are designed to carry nested IDs.
-4. Return core domain models, not API schemas or dictionaries.
-5. Keep pagination detection explicit and return an accurate `has_next` value.
+1. Compare Kotlin selectors and response transformations with the Python source under `anime_extensions/sources/<source>/`.
+2. Preserve opaque source IDs exactly; API path routes are designed to carry nested IDs.
+3. Return core domain models, not API schemas or dictionaries.
+4. Keep pagination detection explicit and return an accurate `has_next` value.
 
 Example selector translation:
 
@@ -92,30 +106,22 @@ document.selectFirst("h1.title")
 soup.select_one("h1.title")
 ```
 
-### 4. Update VRF or API request logic
+For protected JSON or encrypted endpoints:
 
-For a protected JSON endpoint:
+1. Compare keys, cipher parameters, URL encoding order, transformation order, method, content type, and required request context with Kotlin.
+2. Route requests through `self.context.http`.
+3. Let core HTTP exceptions propagate unless the source adds meaningful domain context.
+4. Translate malformed successful responses into `ParsingError`; do not disguise them as network errors.
 
-1. Compare exchange keys, cipher parameters, URL encoding order, and transformation order with Kotlin.
-2. Verify whether the site changed request method, content type, or required headers.
-3. Route requests through `self.context.http`.
-4. Let core HTTP exceptions propagate unless the source can add meaningful domain context.
-5. Translate malformed successful responses into `ParsingError`; do not disguise them as network errors.
+For extractor behavior:
 
-### 5. Update extractor behavior
+1. Verify the normalized embed URL through `ExtensionRuntime.resolve_extractor(url)` or the registry resolution API. A server label or raw regex match is not sufficient proof of routing.
+2. Inspect the matching Kotlin extractor and relevant host aliases before changing registrations or hoster logic.
+3. Keep patterns narrowly evidenced, preserve required returned-stream headers, normalize relative HLS URLs where required, and validate that every stream URL is HTTP(S).
 
-If server discovery succeeds but streams do not resolve:
+Do not add speculative headers, retries, broad matching patterns, catch-all exception handling, or silent fallbacks. Each behavior change must have Kotlin or reproducible upstream evidence. Attribute a failure to a transient upstream condition only when request/response comparison supports that conclusion, and record that evidence rather than weakening tests.
 
-1. Confirm the embed URL matches a registered extractor pattern.
-2. Check `anime_extensions/extractors/` for host-specific token, signature, key, or playlist changes.
-3. Keep extractor URL patterns narrowly scoped to avoid resolving unrelated hosts.
-4. Preserve required request headers on returned streams.
-5. Normalize relative HLS URLs against the playlist URL when required.
-6. Validate that every returned stream URL uses HTTP(S).
-
-`ExtensionRuntime.resolve_extractor(url)` performs pattern resolution and injects the same `SourceContext` used by the source.
-
-### 6. Preserve API contracts
+### 5. Preserve API contracts
 
 Do not change public response shapes while repairing a scraper:
 
@@ -151,32 +157,27 @@ Unit tests must not depend on live upstream services.
 
 ### Live tests
 
-Live tests validate that the current upstream still supports the complete source pipeline. They require `--run-live`:
+Live tests validate that the current upstream still supports the complete source pipeline. They require `--run-live` and are for narrow, targeted diagnosis only:
 
 ```bash
-uv run pytest tests/live/test_live_<source>.py --run-live -v
+uv run pytest tests/live/test_live_<source>.py::<test_name> --run-live -v
 ```
 
-When a source or extractor affects multiple integrations, run the full live suite:
+Do not run the full local live suite. A live failure can be transient, but must be investigated through the behavior matrix and Kotlin comparison before deciding whether code is needed. Record the failing boundary and response behavior; do not weaken assertions merely to accommodate an upstream outage.
+
+## Local Checks and PR Validation
+
+Before committing, run the repository-wide lint and formatting checks and any changed deterministic test cases:
 
 ```bash
-uv run pytest tests/live/ --run-live
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest tests/<area>/test_<module>.py::<test_name>
 ```
 
-A live failure can be transient. Record the failing stage and response behavior before deciding that a code change is necessary; do not weaken assertions merely to accommodate an upstream outage.
+The third command is an example of a narrow local test, not a requirement to run the entire test suite. Do not run full local pytest or the full live suite, and do not alter pre-commit or pre-push hooks to add or remove pytest behavior.
 
-## Required Pre-Commit Checks
-
-Run all four commands and fix failures before committing:
-
-```bash
-uv run ruff check anime_extensions anime_extensions_api tests
-uv run ruff format --check anime_extensions anime_extensions_api tests
-uv run pytest
-uv run pytest tests/live/ --run-live
-```
-
-The GitHub Actions workflow should remain aligned with these checks.
+Open a pull request after targeted local verification. GitHub Actions is authoritative for the complete lint, format, unit-test, live-test, build, and quality matrix. Investigate CI failures at their actual pipeline boundary and push an evidence-backed correction; do not change code or tests merely to make a transient failure disappear.
 
 ## Common Failure Signals
 

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from ..core.extractor import Extractor
 from ..core.registry import register_extractor
+from ..exceptions import ParsingError
 from ..models import Stream, Subtitle
 from ..utils.m3u8 import parse_m3u8_streams
 
@@ -70,13 +71,15 @@ class EchoVideoExtractor(Extractor):
                 sources_url = f"{base_embed}/getSourcesNew?id={video_id}"
                 async with session.get(sources_url, headers=headers) as resp2:
                     if resp2.status != 200:
-                        return []
+                        raise ParsingError(
+                            f"EchoVideo: both getSources and getSourcesNew returned {resp.status}/{resp2.status}"
+                        )
                     data = await resp2.json(content_type=None)
             else:
                 data = await resp.json(content_type=None)
 
         if not isinstance(data, dict):
-            return []
+            raise ParsingError(f"EchoVideo: expected dict response, got {type(data).__name__}")
 
         # Parse Subtitles
         subtitles: list[Subtitle] = []
@@ -101,7 +104,9 @@ class EchoVideoExtractor(Extractor):
 
         sources = data.get("sources")
         if not sources:
-            return []
+            raise ParsingError(
+                f"EchoVideo: 'sources' field missing or empty. Available keys: {list(data.keys())}"
+            )
 
         # Case 1: Quality-keyed direct files (DatSaV) -> dict of {quality: [urls]}
         if isinstance(sources, dict) and "qualityFiles" in sources:
@@ -139,7 +144,9 @@ class EchoVideoExtractor(Extractor):
                 m3u8_url = first.get("file") or first.get("url")
 
         if not m3u8_url or not m3u8_url.startswith("http"):
-            return []
+            raise ParsingError(
+                f"EchoVideo: could not extract valid stream URL from sources payload (type: {type(sources).__name__})"
+            )
 
         # Fetch and parse the m3u8 playlist
         try:

@@ -8,11 +8,11 @@ Operate at principal-engineer quality.
 
 - **Workspace:** Work strictly inside `"C:\Users\shariq\Documents\Code\clones\anime-extensions-py"`.
 
-- **Source Parent** The source of kotlin files that is used to port scrapers is `"C:\Users\shariq\Documents\Code\clones\anime-extensions"`.
+- **Kt Source** The source of kotlin files that is used to port scrapers is `"C:\Users\shariq\Documents\Code\clones\anime-extensions"`.
 
   Never modify, test, stage, commit, or deploy anything outside `"C:\Users\shariq\Documents\Code\clones\anime-extensions-py"` unless explicitly instructed.
 
-- The source parent directory contains the original Kotlin scrapers and is **read-only reference material** used only when porting or comparing scraper logic.
+- The kt source directory contains the original Kotlin scrapers and is **read-only reference material** used only when porting or comparing scraper logic.
 
 - **Commands:** Run commands from the project subdirectory:
 
@@ -217,57 +217,25 @@ Every source implements the following contract:
 
 ## Porting a Scraper from Kotlin
 
-Porting and repair work is evidence-driven. Do not infer behavior from a source name, a server label, a single failed live request, or a familiar hoster pattern. Read `docs/MAINTENANCE.md` and trace the relevant Kotlin implementation before changing Python behavior.
+Porting and repair work is strictly **evidence-driven**. Do not guess behavior from source names, server labels, or single transient live responses. Always consult `docs/MAINTENANCE.md` for the full protocol, behavior matrix template, and diagnostic procedures.
 
-### 1. Trace the complete implementation graph
+### Core Principles
 
-Before writing code, identify and read the Kotlin source class and every relevant dependency:
+1. **Trace the Kotlin implementation graph first**: Read the source class and every dependency (request helpers, headers, cookies, crypto/VRF utilities, extractor mappings) in `anime-extensions` before writing code.
+2. **Isolate the exact failing boundary**: Identify whether a failure is in catalog parsing, details, episodes, server discovery, embed URL normalization, extractor resolution, hoster decryption, or playlist parsing. Never alter a source to compensate for an extractor defect, or vice versa.
+3. **Adhere to SDK contracts**:
+   - Inherit from `BaseSource(context)` or `BaseExtractor(context)`.
+   - Route all requests through `self.context.http`; never create standalone sessions.
+   - Return typed domain models (`Anime`, `Episode`, `Server`, `Stream`, `Subtitle`); never return raw dicts.
+   - Register via `@register_source` or `@register_extractor(r"pattern")` and export from `__init__.py`.
+   - Raise `ParsingError` for malformed 200 responses; let core HTTP errors propagate naturally. Avoid catch-all exception swallowing.
+4. **Enforce performance budgets**: CPU-bound operations (proof-of-work, mixing loops) must resolve comfortably within proxy/gateway timeouts (< 2–3 seconds). Do not raise internal timeout constants as a workaround for slow code.
+5. **Prove behavior deterministically**:
+   - Add unit tests with fixed HTML/JSON/playlist fixtures for every selector, request construction, crypto transform, and error path.
+   - Test extractor resolution using `ExtensionRuntime.resolve_extractor(url)` with representative normalized embed URLs.
+   - A passing local live test alone does not establish production verification—real deployed availability and performance must be proven.
 
-- source/provider classes and their base URL or domain mappings;
-- catalog, details, episode, server, and stream request paths;
-- extractors selected by embed URL, including hoster aliases and provider-specific variants;
-- request helpers, URL normalization, cookies, headers, referer/origin behavior, and request ordering;
-- VRF, crypto, signatures, encoding, decryption, and other helper utilities; and
-- tests or fixtures that define expected behavior.
-
-Create a behavior matrix before implementation. For each affected pipeline boundary, record the endpoint, HTTP method, query/form/body values, headers, cookies, referer/origin, response shape, parsed IDs, pagination rules, server label, normalized embed URL, resolved extractor, and expected stream/subtitle result.
-
-Port observable semantics exactly. Do not copy Kotlin framework plumbing line-by-line, and do not substitute a generic implementation for behavior that the Kotlin implementation defines precisely.
-
-### 2. Isolate the failing boundary
-
-Determine whether the failure is in catalog parsing, details, episodes, server discovery, embed normalization, extractor resolution, hoster extraction, or playlist parsing. Change only the responsible layer.
-
-- Do not modify a source to compensate for an extractor-routing or hoster defect.
-- Do not add headers, retries, broad regexes, fallbacks, or exception handling based on a guess.
-- Treat an upstream 403, timeout, 5xx, or malformed response as an observation, not proof of a Python defect. Reproduce it narrowly and compare the corresponding Kotlin request sequence before changing code.
-- Attribute a failure to a transient upstream condition only when the observed request and response behavior supports that conclusion; record the failing stage and evidence.
-
-### 3. Implement within SDK contracts
-
-Implement sources in `anime_extensions/sources/<source_name>.py` using `BaseSource(context)`. Use `self.context.http`, `BeautifulSoup`, and `self.context.runtime.resolve_extractor(url)`; never create a direct session or introduce global state.
-
-- Return typed domain models only and preserve opaque IDs exactly.
-- Keep stream URLs HTTP(S), preserve required stream headers and subtitles, and normalize URLs only where the upstream behavior requires it.
-- Register sources with `@register_source` and extractors with a narrowly evidenced `@register_extractor(...)` pattern, then export the module from the appropriate package `__init__.py`.
-- Raise `ParsingError` for successful but malformed or unusable upstream content. Let core HTTP exceptions propagate unless meaningful domain context can be added.
-- Do not use catch-all exception wrappers or silent fallbacks. Handle only understood, expected failure modes and preserve typed failures.
-- Do not change public API response contracts while porting or repairing a source.
-
-### 4. Prove behavior before completion
-
-Add deterministic unit tests using fixed HTML/JSON/playlist fixtures and mocked HTTP for every changed semantic behavior: selectors, request construction, transformations/crypto, URL normalization, typed errors, and stream parsing.
-
-Prove extractor selection through runtime or registry resolution with a representative normalized embed URL; testing a regex string or a server label alone is insufficient. Add the relevant source and extractor tests under `tests/sources/` and `tests/extractors/`; add or update a narrow live test under `tests/live/` when it provides meaningful integration coverage.
-
-Run only targeted local tests and, when necessary, one targeted live test:
-
-```bash
-uv run pytest tests/sources/test_<source>.py::<test_name>
-uv run pytest tests/live/test_live_<source>.py::<test_name> --run-live
-```
-
-Do not run the full local pytest or live-test suites. GitHub Actions on the pull request is authoritative for the complete unit, live, build, and quality matrix.
+For the full step-by-step diagnostic and porting workflow, see `docs/MAINTENANCE.md`.
 
 ---
 
@@ -386,7 +354,7 @@ Do not commit or push directly to `main` unless explicitly instructed.
 3. **Before committing**, run the full lint and format checks:
 
    ```bash
-   cd anime-extensions-py; uv run ruff check .; uv run ruff format --check .
+   uv run ruff check .; uv run ruff format --check .
    ```
 
    Fix every failure before proceeding.

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import ctypes
 import gzip
 import json
+import os
 import time
 from typing import Any
 from urllib.parse import quote
@@ -94,11 +96,46 @@ def _count_leading_zeros32(val: int) -> int:
     return 32 - val.bit_length()
 
 
+_POW_LIB = None
+_POW_LIB_CHECKED = False
+
+
+def _load_pow_lib():
+    """Load the native C PoW library via ctypes, with fallback to pure Python."""
+    global _POW_LIB, _POW_LIB_CHECKED
+    if _POW_LIB_CHECKED:
+        return _POW_LIB
+
+    _POW_LIB_CHECKED = True
+    try:
+        dll_path = os.path.join(os.path.dirname(__file__), "_byse_pow.dll")
+        if os.path.exists(dll_path):
+            lib = ctypes.CDLL(dll_path)
+            lib.solve_byse_pow_c.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
+            lib.solve_byse_pow_c.restype = ctypes.c_int
+            _POW_LIB = lib
+    except Exception:
+        pass
+
+    return _POW_LIB
+
+
 def solve_byse_pow(nonce: str, difficulty: int, max_iterations: int = 2_000_000) -> str:
     """Solve the Byse/BYFMS proof-of-work challenge.
 
     Port of the Kotlin ByseExtractor ChaCha-like buffer mix hash algorithm.
+    Uses native C acceleration via ctypes when available, falls back to pure Python.
     """
+    lib = _load_pow_lib()
+    if lib is not None:
+        result = lib.solve_byse_pow_c(nonce.encode("utf-8"), difficulty, max_iterations)
+        if result >= 0:
+            return str(result)
+        raise CryptoError(
+            f"Byse: PoW exhausted ({max_iterations} iterations, difficulty={difficulty})"
+        )
+
+    # Pure Python fallback
     prefix = f"{nonce}:".encode("latin-1")
     buffer_size = 512
     buffer_mask = 511

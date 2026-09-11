@@ -123,3 +123,20 @@ async def test_http_error_translation():
         await client.get("https://mock.source/404")
 
     await client.close()
+
+
+def test_source_registry_quarantine():
+    from anime_extensions.core.registry import _QUARANTINED_SOURCES, SourceRegistry
+
+    registry = SourceRegistry()
+    registry.register(MockSource)
+
+    assert registry.get("mock-source") is MockSource
+    assert MockSource in registry.list_all()
+
+    try:
+        _QUARANTINED_SOURCES.add("mock-source")
+        assert registry.get("mock-source") is None
+        assert MockSource not in registry.list_all()
+    finally:
+        _QUARANTINED_SOURCES.remove("mock-source")

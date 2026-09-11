@@ -211,7 +211,8 @@ Every source implements the following contract:
 
 - `aniwaves`
 - `anikoto`
-- `mkissa`
+- `animenosub`
+- `mkissa` (quarantined: toggle in `anime_extensions/core/registry.py`)
 
 ---
 
@@ -311,9 +312,9 @@ When an error appears during implementation or testing:
 
 4. If an exception appears to require defensive wrapping, first consider whether the control flow, abstraction, validation, or surrounding design can be improved so the exceptional state is handled more naturally.
 
-5. Prefer fixing the underlying defect over masking its symptoms.
+5. Prefer fixing the underlying or refactoring the entire code defect over masking its symptoms.
 
-6. Preserve meaningful failures and typed exceptions rather than converting them into silent fallbacks.
+6. If `try` / `except` is used then Preserve meaningful failures and typed exceptions rather than converting them into silent fallbacks but refer to point 1 to 5 before.
 
 ---
 

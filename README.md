@@ -15,7 +15,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Typed domain models**: Sources return consistent anime, episode, server, stream, and subtitle models.
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
 - **Stampede-resistant caching**: `AsyncTTLCache.get_or_set` coalesces concurrent cache misses for the same key into one upstream request.
-- **Active sources**: AniWaves, Anikoto, and MKissa.
+- **Active sources**: AniWaves, Anikoto, and AnimeNoSub (MKissa quarantined due to upstream anti-bot/CAPTCHA).
 - **Built-in extractors**: Byse/Filemoon, DoodStream, and EchoVideo-compatible hosts.
 
 ## Architecture
@@ -174,6 +174,15 @@ IDs are opaque source-owned values and may contain path separators. Clients shou
 5. Add deterministic unit tests for parsing and URL resolution.
 
 See [the scraper maintenance guide](docs/MAINTENANCE.md) for porting and repair guidance.
+
+## Architecture Roadmap
+
+The project tracks planned architectural improvements in [docs/ROADMAP.md](docs/ROADMAP.md). This includes SDK enhancements, API optimizations, and library-grade refactorings planned for incremental implementation.
+
+## Contributing
+
+- [Writing Extractors Guide](docs/WRITING_EXTRACTORS.md) — detailed guidance for implementing video extractors
+- [Scraper Maintenance Guide](docs/MAINTENANCE.md) — evidence-driven protocol for porting and repairing scrapers
 
 ## Verification
 

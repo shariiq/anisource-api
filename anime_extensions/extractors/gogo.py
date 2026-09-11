@@ -56,7 +56,9 @@ class GogoStreamExtractor(Extractor):
 
     @staticmethod
     def _get_bytes_after(element_classes: list[str] | str, prefix: str) -> bytes:
-        class_str = " ".join(element_classes) if isinstance(element_classes, list) else element_classes
+        class_str = (
+            " ".join(element_classes) if isinstance(element_classes, list) else element_classes
+        )
         after = class_str.split(prefix, 1)[-1] if prefix in class_str else ""
         digits = "".join(c for c in after if c.isdigit())
         return digits.encode("utf-8")
@@ -84,9 +86,13 @@ class GogoStreamExtractor(Extractor):
 
             soup = BeautifulSoup(text, "html.parser")
 
-            wrapper = soup.find("div", class_=lambda c: c and "container-" in c) or soup.find("div", class_="wrapper")
+            wrapper = soup.find("div", class_=lambda c: c and "container-" in c) or soup.find(
+                "div", class_="wrapper"
+            )
             body = soup.find("body", class_=lambda c: c and "container-" in c) or soup.find("body")
-            videocontent = soup.find("div", class_=lambda c: c and "videocontent-" in c) or soup.find("div", class_="videocontent")
+            videocontent = soup.find(
+                "div", class_=lambda c: c and "videocontent-" in c
+            ) or soup.find("div", class_="videocontent")
             script_data = soup.find("script", {"data-value": True})
 
             if not wrapper or not body or not videocontent or not script_data:
@@ -114,9 +120,15 @@ class GogoStreamExtractor(Extractor):
 
             encrypted_id = self._crypto_handler(video_id, iv, secret_key, encrypt=True)
             token = qs.get("token", [None])[0]
-            quality_prefix = f"{label_prefix or 'GogoStream'} - " if token else f"{label_prefix or 'Vidstreaming'} - "
+            quality_prefix = (
+                f"{label_prefix or 'GogoStream'} - "
+                if token
+                else f"{label_prefix or 'Vidstreaming'} - "
+            )
 
-            ajax_url = f"{host}/encrypt-ajax.php?id={encrypted_id}&{decrypted_ajax}&alias={video_id}"
+            ajax_url = (
+                f"{host}/encrypt-ajax.php?id={encrypted_id}&{decrypted_ajax}&alias={video_id}"
+            )
             headers = {
                 "X-Requested-With": "XMLHttpRequest",
                 "Referer": url,

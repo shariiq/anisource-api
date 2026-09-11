@@ -5,24 +5,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from anime_extensions.core.errors import ExtractorError
+from anime_extensions.core.errors import HttpError, ParsingError
 from anime_extensions.extractors.byse import ByseExtractor
 from anime_extensions.models import Stream
-
-
-def _async_ctx(resp):
-    """Helper to create async context manager from mock response."""
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=resp)
-    ctx.__aexit__ = AsyncMock(return_value=None)
-    return ctx
 
 
 @pytest.fixture
 def mock_context():
     ctx = MagicMock()
     ctx.http = MagicMock()
-    ctx.http.session = MagicMock()
+    ctx.http.post_json = AsyncMock()
     return ctx
 
 
@@ -43,7 +35,7 @@ async def test_byse_extractor_challenge_and_playback_flow(mock_context):
         }
     )
 
-    # Create mock responses with proper async context manager support
+    # Mock post_json responses in order
     response_data = [
         {"nonce": "nonce-1", "challenge_id": "challenge-1"},
         {
@@ -57,14 +49,7 @@ async def test_byse_extractor_challenge_and_playback_flow(mock_context):
         {"playback": "encrypted-payload"},
     ]
 
-    mock_responses = []
-    for data in response_data:
-        mock_resp = MagicMock()
-        mock_resp.status = 200
-        mock_resp.json = AsyncMock(return_value=data)
-        mock_responses.append(_async_ctx(mock_resp))
-
-    mock_context.http.session.post.side_effect = mock_responses
+    mock_context.http.post_json.side_effect = response_data
 
     with (
         patch(
@@ -96,11 +81,9 @@ async def test_byse_extractor_challenge_and_playback_flow(mock_context):
 async def test_byse_extractor_rejects_failed_challenge(mock_context):
     """Test a non-success challenge response raises a useful extractor error."""
     extractor = ByseExtractor(context=mock_context)
-    mock_resp = MagicMock()
-    mock_resp.status = 403
-    mock_context.http.session.post.return_value = _async_ctx(mock_resp)
+    mock_context.http.post_json.side_effect = HttpError("challenge failed with status 403")
 
-    with pytest.raises(ExtractorError, match="challenge failed with status 403"):
+    with pytest.raises(HttpError, match="challenge failed with status 403"):
         await extractor.extract("https://byse.example/embed/media-123")
 
 
@@ -109,6 +92,6 @@ async def test_byse_extractor_requires_media_id(mock_context):
     """Test malformed embed paths fail before making any network request."""
     extractor = ByseExtractor(context=mock_context)
 
-    with pytest.raises(ExtractorError, match="could not read media id"):
+    with pytest.raises(ParsingError, match="could not read media id"):
         await extractor.extract("https://byse.example/embed")
-    mock_context.http.session.post.assert_not_called()
+    mock_context.http.post_json.assert_not_called()

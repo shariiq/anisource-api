@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+echo "==> Running pre-push validation gate..."
+
+# 1. Linting
+echo "--> Checking lint..."
+uv run ruff check anime_extensions anime_extensions_api tests
+
+# 2. Formatting
+echo "--> Checking formatting..."
+uv run ruff format --check anime_extensions anime_extensions_api tests
+
+# 3. Bytecode compilation
+echo "--> Checking bytecode compilation..."
+uv run python -m compileall -q anime_extensions anime_extensions_api
+
+# 4. Unit tests
+echo "--> Running unit tests..."
+uv run pytest -q
+
+echo "✓ Pre-push validation passed!"

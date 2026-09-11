@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 from bs4 import BeautifulSoup
 
-from ...core.errors import ExtractorError
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.registry import register_source
 from ...core.source import Source
@@ -276,11 +275,8 @@ class AniWaves(Source):
         embed_url = await self._get_embed_url(server_id, episode_id)
         if not embed_url:
             return []
-        try:
-            extractor = self.context.runtime.resolve_extractor(embed_url)
-        except ExtractorError:
-            log.warning("AniWaves has no registered extractor for the selected server")
-            return []
+
+        extractor = self.context.runtime.resolve_extractor(embed_url)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Doodstream":
             kwargs["quality_prefix"] = kwargs.pop("label_prefix")
@@ -294,11 +290,8 @@ class AniWaves(Source):
                 "",
             )
             kwargs.update(embed_parent=f"{self.base_url}{epurl}", embed_origin=self.base_url)
-        try:
-            return await extractor.extract(embed_url, **kwargs)
-        except Exception as error:
-            log.warning("AniWaves stream extraction failed with %s", type(error).__name__)
-            return []
+
+        return await extractor.extract(embed_url, **kwargs)
 
     async def _get_embed_url(self, server_id: str, episode_id: str) -> str | None:
         """Get an embed URL from an AniWaves server identifier."""

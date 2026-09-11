@@ -108,27 +108,16 @@ async def test_streamwish_extractor(mock_context):
     var m3u8 = "https://streamwish.com/master.m3u8";
     </script>
     """
-    page_response = AsyncMock()
-    page_response.status = 200
-    page_response.text.return_value = html
-    playlist_response = AsyncMock()
-    playlist_response.status = 200
-    playlist_response.text.return_value = "#EXTM3U"
+    playlist = "#EXTM3U"
 
-    page_request = MagicMock()
-    page_request.__aenter__ = AsyncMock(return_value=page_response)
-    page_request.__aexit__ = AsyncMock(return_value=None)
-    playlist_request = MagicMock()
-    playlist_request.__aenter__ = AsyncMock(return_value=playlist_response)
-    playlist_request.__aexit__ = AsyncMock(return_value=None)
-    mock_context.http.session.get.side_effect = [page_request, playlist_request]
+    mock_context.http.get.side_effect = [html, playlist]
 
     with patch("anime_extensions.extractors.streamwish.parse_m3u8_streams") as mock_parse:
         mock_parse.return_value = [MagicMock()]
         streams = await extractor.extract("https://streamwish.com/e/123")
 
         assert streams
-        assert mock_context.http.session.get.call_count == 2
+        assert mock_context.http.get.call_count == 2
 
 
 @pytest.mark.asyncio

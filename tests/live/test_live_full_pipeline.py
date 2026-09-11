@@ -19,7 +19,7 @@ from anime_extensions.sources import Anikoto, AnimeNoSub, AniWaves, MKissa
 log = logging.getLogger(__name__)
 
 SOURCES = (Anikoto, AnimeNoSub, AniWaves, MKissa)
-TEST_QUERIES = ("One Piece", "Naruto", "Bleach", "Attack on Titan")
+TEST_QUERIES = ("Death Note", "Dandadan", "Cowboy Bebop")
 _MAX_ANIME_CANDIDATES = 3
 _MAX_EPISODE_CANDIDATES = 3
 _MAX_SERVER_CANDIDATES = 4

@@ -1,7 +1,10 @@
 # ==============================================================================
 # Modern 2026 High-Performance Multi-Stage Dockerfile (uv-powered)
 # ==============================================================================
-FROM ghcr.io/astral-sh/uv:0.12.12-python3.14-bookworm-slim AS builder
+FROM python:3.14.7-slim-bookworm AS builder
+
+# Install uv (astral-sh pattern)
+COPY --from=ghcr.io/astral-sh/uv:0.12.12 /uv /uvx /bin/
 
 WORKDIR /app
 

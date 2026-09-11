@@ -101,21 +101,25 @@ _POW_LIB_CHECKED = False
 
 
 def _load_pow_lib():
-    """Load the native C PoW library via ctypes, with fallback to pure Python."""
+    """Load the platform-native C PoW library, with fallback to pure Python."""
     global _POW_LIB, _POW_LIB_CHECKED
     if _POW_LIB_CHECKED:
         return _POW_LIB
 
     _POW_LIB_CHECKED = True
-    try:
-        dll_path = os.path.join(os.path.dirname(__file__), "_byse_pow.dll")
-        if os.path.exists(dll_path):
-            lib = ctypes.CDLL(dll_path)
+    candidates = ["_byse_pow.so", "_byse_pow.dylib", "_byse_pow.dll"]
+    for lib_name in candidates:
+        lib_path = os.path.join(os.path.dirname(__file__), lib_name)
+        if not os.path.exists(lib_path):
+            continue
+        try:
+            lib = ctypes.CDLL(lib_path)
             lib.solve_byse_pow_c.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int]
             lib.solve_byse_pow_c.restype = ctypes.c_int
             _POW_LIB = lib
-    except Exception:
-        pass
+            return _POW_LIB
+        except OSError:
+            continue
 
     return _POW_LIB
 

@@ -51,9 +51,6 @@ anime-api = "anime_extensions_api.main:cli"
 [tool.hatch.build.targets.wheel]
 packages = ["anime_extensions", "anime_extensions_api"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"anime_extensions/utils/_byse_pow.dll" = "anime_extensions/utils/_byse_pow.dll"
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

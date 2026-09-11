@@ -377,7 +377,7 @@ class MKissa(Source):
             "episodeString": episode_string,
         }
 
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 material = await self.key_manager.get_material(force_refresh=attempt > 0)
                 body = await self._get_stream_response(material, variables)
@@ -399,7 +399,7 @@ class MKissa(Source):
                 log.warning("MKissa stream attempt %s failed: %s", attempt + 1, error)
 
             self.key_manager.invalidate()
-            if attempt == 1:
+            if attempt == 0:
                 self.key_manager.invalidate_build()
         return []
 

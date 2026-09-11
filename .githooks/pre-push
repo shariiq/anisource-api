@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+printf '%s\n' 'pre-push: checking lint...'
+uv run ruff check anime_extensions anime_extensions_api tests
+
+printf '%s\n' 'pre-push: checking formatting...'
+uv run ruff format --check anime_extensions anime_extensions_api tests
+
+printf '%s\n' 'pre-push: running unit tests...'
+uv run pytest
+
+printf '%s\n' 'pre-push: running live integration tests...'
+uv run pytest tests/live/ --run-live

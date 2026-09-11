@@ -15,7 +15,7 @@ from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
-from ...exceptions import CryptoError
+from ...core.errors import CryptoError
 from ...utils.mkissa_crypto import MKissaCrypto
 from .bundle import BuildInfo, MKissaBundle, MKissaConfig
 
@@ -290,7 +290,7 @@ class MKissaKeyManager:
         session = self._http.session
         if session is None:
             return None
-        async with session.get(url) as response:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
             if response.status < 200 or response.status >= 300:
                 return None
             body = await response.text(errors="replace")

@@ -1,10 +1,11 @@
 """Deterministic stream-resolution tests for MKissa."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from anime_extensions.core.models import Stream
 from anime_extensions.sources.mkissa import MKissa
 from anime_extensions.sources.mkissa.source import STREAM_HASH, STREAM_QUERY
 from anime_extensions.utils.mkissa_crypto import MKissaCrypto
@@ -75,6 +76,33 @@ async def test_stream_resolution_preserves_direct_url_and_priority() -> None:
 
 
 @pytest.mark.asyncio
+async def test_external_source_uses_registered_extractor() -> None:
+    """External hoster URLs are resolved to direct streams through the registry."""
+    context = MagicMock()
+    extractor = MagicMock()
+    extractor.name = "Example"
+    extractor.extract = AsyncMock(
+        return_value=[Stream(url="https://cdn.example/video.mp4", quality="Example - 1080p")]
+    )
+    context.runtime.resolve_extractor.return_value = extractor
+    source = MKissa(context=context)
+
+    streams = await source._streams_from_sources(
+        [
+            {
+                "sourceUrl": "https://embed.example/e/abc",
+                "sourceName": "Example",
+                "priority": 7,
+            }
+        ]
+    )
+
+    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/abc")
+    extractor.extract.assert_awaited_once()
+    assert [stream.url for stream in streams] == ["https://cdn.example/video.mp4"]
+
+
+@pytest.mark.asyncio
 async def test_internal_source_resolves_hls_subtitles(monkeypatch: pytest.MonkeyPatch) -> None:
     """Resolve MKissa's internal player JSON endpoint into a playable HLS stream."""
     context = MagicMock()
@@ -112,3 +140,28 @@ def _encrypt(payload: str, key: bytes) -> str:
 
     iv = b"i" * 12
     return b64encode(b"\x01" + iv + AESGCM(key).encrypt(iv, payload.encode(), None)).decode()
+
+
+@pytest.mark.asyncio
+async def test_external_source_extractor_error_fallback() -> None:
+    """External hoster URLs should fall back to direct streams if resolve_extractor raises ExtractorError."""
+    from anime_extensions.core.errors import ExtractorError
+
+    context = MagicMock()
+    context.runtime.resolve_extractor.side_effect = ExtractorError("Not found")
+    source = MKissa(context=context)
+
+    streams = await source._streams_from_sources(
+        [
+            {
+                "sourceUrl": "https://embed.example/e/abc.m3u8",
+                "sourceName": "Example",
+                "priority": 7,
+            }
+        ]
+    )
+
+    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/abc.m3u8")
+    assert len(streams) == 1
+    assert streams[0].url == "https://embed.example/e/abc.m3u8"
+    assert streams[0].is_hls is True

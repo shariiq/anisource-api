@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
-from ...core.errors import CryptoError, HttpError, ParsingError
+from ...core.errors import CryptoError, ExtractorError, HttpError, ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.registry import register_source
 from ...core.source import Source
@@ -477,12 +477,44 @@ class MKissa(Source):
             source_url = MKissaCrypto.decrypt_source_url(str(source.get("sourceUrl", "")))
             source_name = str(source.get("sourceName") or "Unknown")
             priority = self._source_priority(source.get("priority"))
+
+            if source_url.startswith("//"):
+                source_url = f"https:{source_url}"
+
             if source_url.startswith("/apivtwo/") and self._is_internal_hoster(source_name):
                 streams.extend(
                     (priority, stream)
                     for stream in await self._extract_internal_source(source_url, source_name)
                 )
                 continue
+
+            # Attempt to resolve using registered extractors
+            try:
+                extractor = self.context.runtime.resolve_extractor(source_url)
+            except ExtractorError:
+                extractor = None
+
+            if extractor is not None:
+                try:
+                    extracted = await extractor.extract(
+                        source_url,
+                        label_prefix=source_name,
+                        quality_prefix=source_name,
+                        embed_parent=f"{self.base_url}/",
+                        embed_origin=f"{self.base_url}/",
+                    )
+                    if extracted:
+                        streams.extend((priority, stream) for stream in extracted)
+                        continue
+                except Exception as error:
+                    log.warning(
+                        "MKissa: failed to extract %s via %s: %s",
+                        source_url,
+                        extractor.name,
+                        error,
+                    )
+
+            # Fallback to direct stream
             stream = self._direct_stream(source_url, source_name, priority)
             if stream is not None:
                 streams.append((priority, stream))

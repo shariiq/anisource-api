@@ -1,10 +1,11 @@
 """Deterministic stream-resolution tests for MKissa."""
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from anime_extensions.core.models import Stream
 from anime_extensions.sources.mkissa import MKissa
 from anime_extensions.sources.mkissa.source import STREAM_HASH, STREAM_QUERY
 from anime_extensions.utils.mkissa_crypto import MKissaCrypto
@@ -72,6 +73,58 @@ async def test_stream_resolution_preserves_direct_url_and_priority() -> None:
         "https://cdn.example/low.m3u8",
     ]
     assert all(stream.is_hls for stream in streams)
+
+
+@pytest.mark.asyncio
+async def test_external_source_uses_registered_extractor() -> None:
+    """External hoster URLs are resolved through the extractor registry."""
+    context = MagicMock()
+    extractor = MagicMock()
+    extractor.name = "Example"
+    extractor.extract = AsyncMock(
+        return_value=[Stream(url="https://cdn.example/video.mp4", quality="Example - 1080p")]
+    )
+    context.runtime.resolve_extractor.return_value = extractor
+    source = MKissa(context=context)
+
+    streams = await source._streams_from_sources(
+        [
+            {
+                "sourceUrl": "https://embed.example/e/abc",
+                "sourceName": "Example",
+                "priority": 7,
+            }
+        ]
+    )
+
+    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/abc")
+    extractor.extract.assert_awaited_once()
+    assert [stream.url for stream in streams] == ["https://cdn.example/video.mp4"]
+
+
+@pytest.mark.asyncio
+async def test_external_source_fallback_on_extractor_error() -> None:
+    """When an extractor fails to resolve, MKissa falls back to treating it as a direct link."""
+    from anime_extensions.core.errors import ExtractorError
+
+    context = MagicMock()
+    context.runtime.resolve_extractor.side_effect = ExtractorError("No matched extractor for URL")
+    source = MKissa(context=context)
+
+    streams = await source._streams_from_sources(
+        [
+            {
+                "sourceUrl": "https://embed.example/e/unsupported",
+                "sourceName": "Unsupported",
+                "priority": 3,
+            }
+        ]
+    )
+
+    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/unsupported")
+    assert len(streams) == 1
+    assert streams[0].url == "https://embed.example/e/unsupported"
+    assert streams[0].quality == "Unsupported - 3"
 
 
 @pytest.mark.asyncio

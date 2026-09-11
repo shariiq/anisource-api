@@ -428,16 +428,17 @@ class MKissa(Source):
             "x-build-id": material.build_id,
             "Referer": f"{self.base_url}/",
         }
-        session = self.context.http.session
-        if session is None:
-            raise RuntimeError("Extension runtime HTTP client is not active")
-        async with session.get(f"{self.api_url}/api", params=params, headers=headers) as response:
-            if response.status < 200 or response.status >= 300:
-                raise HttpError(
-                    f"MKissa stream request failed with status {response.status}",
-                    status_code=response.status,
-                )
-            return await response.text(errors="replace")
+        try:
+            return await self.context.http.get(
+                f"{self.api_url}/api",
+                params=params,
+                headers=headers,
+            )
+        except TimeoutError as error:
+            raise HttpError(
+                "MKissa stream request timed out after 30s",
+                status_code=504,
+            ) from error
 
     @staticmethod
     def _source_urls_from_response(body: str, key: bytes) -> list[dict[str, Any]]:

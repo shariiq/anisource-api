@@ -61,3 +61,26 @@ Mf={v:1,saltMul:114,saltAdd:200,fragMul:219,fragAdd:67,bootPrefix:alias(28)+alia
     assert config.join_char == "~"
     assert config.parts == ("lane", "epoch", "group", "host", "buildId")
     assert config.env_xor == 72
+
+
+def test_parse_object_property_delta_alias_decoder() -> None:
+    """Resolve bundle where alias decoders access delta via an inline object property."""
+    bundle = """
+function tbl(){const values=["junk","build-168","QU","FB","QU","FBQUE=","Qk","JC","Qk","JCQkI=","Q0","ND","Q0","NDQ0M=","RE","RE","RE","REREQ=","vm","cF","XS","3Dmg:","lane","buildId","group","host","epoch"]}
+function base(value){return value=value-(10),tbl()[value]}
+function alias(e,t){return base(e-{_0x453117:5}._0x453117)}
+build=alias(16);
+const dm=[alias(17)+alias(18)+alias(19)+alias(20),alias(21)+alias(22)+alias(23)+alias(24),alias(25)+alias(26)+alias(27)+alias(28),alias(29)+alias(30)+alias(31)+alias(32)]
+Mf={v:1,saltMul:241,saltAdd:209,fragMul:210,fragAdd:42,bootPrefix:alias(33)+alias(34)+alias(35)+alias(36),join:":",parts:[alias(37),alias(38),alias(39),alias(40),alias(41)],omitEmptyLane:!1,envXor:142};
+"""
+
+    build = MKissaBundle.parse(bundle)
+
+    assert build is not None
+    assert build.build_id == "build-168"
+    assert build.seeds == ("QUFBQUFBQUE=", "QkJCQkJCQkI=", "Q0NDQ0NDQ0M=", "REREREREREQ=")
+    assert build.config is not None
+    assert build.config.salt_mul == 241
+    assert build.config.boot_prefix == "vmcFXS3Dmg:"
+    assert build.config.join_char == ":"
+    assert build.config.parts == ("lane", "buildId", "group", "host", "epoch")

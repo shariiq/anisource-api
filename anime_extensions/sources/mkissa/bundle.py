@@ -17,7 +17,7 @@ _BASE_DECODER_REGEX = re.compile(
     rf"function ({_IDENT})\(({_IDENT})(?:,{_IDENT})*\)\{{return \2=\2-\(?([-\d+*\s]+?)\)?,({_IDENT})\(\)\[\2\]\}}"
 )
 _ALIAS_DECODER_REGEX = re.compile(
-    rf"function ({_IDENT})\(({_IDENT}),({_IDENT})\)\{{return ({_IDENT})\(({_IDENT})((?:[-+][\d+*\s-]+)?)\)\}}"
+    rf"function ({_IDENT})\(({_IDENT})(?:,\s*({_IDENT}))?\)\{{\s*return ({_IDENT})\(\s*({_IDENT})\s*([-+])\s*(?:\{{.*?:\s*(-?\d+)\s*\}}\.[$A-Za-z0-9_]+|([-\d+*\s]+))\s*\)\s*\}}"
 )
 _ASSIGNMENT_REGEX_TEMPLATE = rf"\b{{name}}\s*=\s*({_CALL_PATTERN})\s*(?:,|;|\n)"
 _ANY_ASSIGNMENT_REGEX = re.compile(rf"\b\w+\s*=\s*({_CALL_PATTERN})\s*(?:,|;|\n)")
@@ -254,13 +254,22 @@ class MKissaBundle:
         }
         aliases = {name: _AliasDecoder(name, 0, 0) for name in bases}
         for match in _ALIAS_DECODER_REGEX.finditer(js):
-            name, first_parameter, _, callee, argument, delta = match.groups()
+            name, first_parameter, second_parameter, callee, argument, sign, obj_delta, arith_delta = match.groups()
             if callee not in bases:
                 continue
+            # Handle both old pattern: delta as arithmetic expression
+            # and new pattern: delta from object property {_0x453117:564}._0x453117
+            if obj_delta:
+                delta = int(obj_delta)
+                if sign == "-":
+                    delta = -delta
+            else:
+                delta = cls._fold(sign + arith_delta) if arith_delta else 0
+
             aliases[name] = _AliasDecoder(
                 callee,
                 0 if argument == first_parameter else 1,
-                cls._fold(delta) if delta else 0,
+                delta,
             )
         return tables, bases, aliases
 

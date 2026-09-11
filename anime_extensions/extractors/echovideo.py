@@ -130,6 +130,29 @@ class EchoVideoExtractor(Extractor):
                             )
                 return streams
 
+        # Case 2: Sources is directly a quality-keyed map (DGHG / DatSaV flat pattern)
+        if isinstance(sources, dict):
+            stream_fields = {"file", "url", "qualityFiles"}
+            if not any(key in sources for key in stream_fields):
+                streams_flat: list[Stream] = []
+                for quality, value in sources.items():
+                    url_list = value if isinstance(value, list) else [value]
+                    qual_name = DATSAV_QUALITY_LABELS.get(quality, quality)
+                    full_label = f"{label_prefix} - {qual_name}" if label_prefix else qual_name
+                    for u in url_list:
+                        if isinstance(u, str) and u.startswith("http"):
+                            streams_flat.append(
+                                Stream(
+                                    url=u,
+                                    quality=full_label,
+                                    headers=video_headers,
+                                    subtitles=subtitles,
+                                    is_hls=".m3u8" in u,
+                                )
+                            )
+                if streams_flat:
+                    return streams_flat
+
         # Extract master playlist URL from various JSON shapes
         m3u8_url: str | None = None
         if isinstance(sources, dict):

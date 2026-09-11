@@ -234,7 +234,7 @@ class MKissaKeyManager:
                 "Referer": f"{self.site_url}/",
             }
             try:
-                async with session.get(url, params=params, headers=headers) as response:
+                async with session.get(url, params=params, headers=headers, ssl=False) as response:
                     if response.status < 200 or response.status >= 300:
                         saw_stale = saw_stale or response.status in {403, 404}
                         continue
@@ -255,7 +255,7 @@ class MKissaKeyManager:
             raise CryptoError("MKissa key manager HTTP client is not active")
 
         try:
-            async with session.get(f"{self.site_url}/") as response:
+            async with session.get(f"{self.site_url}/", ssl=False) as response:
                 if response.status < 200 or response.status >= 300:
                     return None
                 html = await response.text(errors="replace")
@@ -263,7 +263,7 @@ class MKissaKeyManager:
             if entry_match is None:
                 return None
             entry_url = urljoin(f"{self.site_url}/", entry_match.group(1))
-            async with session.get(entry_url) as response:
+            async with session.get(entry_url, ssl=False) as response:
                 if response.status < 200 or response.status >= 300:
                     return None
                 app_js = await response.text(errors="replace")
@@ -290,7 +290,7 @@ class MKissaKeyManager:
         session = self._http.session
         if session is None:
             return None
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10), ssl=False) as response:
             if response.status < 200 or response.status >= 300:
                 return None
             body = await response.text(errors="replace")

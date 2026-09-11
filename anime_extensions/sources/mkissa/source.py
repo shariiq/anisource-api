@@ -433,6 +433,7 @@ class MKissa(Source):
                 f"{self.api_url}/api",
                 params=params,
                 headers=headers,
+                ssl=False,
             )
         except TimeoutError as error:
             raise HttpError(

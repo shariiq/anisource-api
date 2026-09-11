@@ -14,12 +14,12 @@ from typing import Any
 import pytest
 
 from anime_extensions.models import Anime, Episode, Server, Stream
-from anime_extensions.sources import Anikoto, AniWaves, MKissa
+from anime_extensions.sources import Anikoto, AnimeNoSub, AniWaves, MKissa
 
 log = logging.getLogger(__name__)
 
-SOURCES = (Anikoto, AniWaves, MKissa)
-TEST_QUERIES = ("One Piece", "Naruto", "Bleach", "Attack on Titan")
+SOURCES = (Anikoto, AnimeNoSub, AniWaves, MKissa)
+TEST_QUERIES = ("Death Note", "Dandadan", "Cowboy Bebop")
 _MAX_ANIME_CANDIDATES = 3
 _MAX_EPISODE_CANDIDATES = 3
 _MAX_SERVER_CANDIDATES = 4

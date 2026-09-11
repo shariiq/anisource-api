@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source: [aniwaves, anikoto, mkissa, full_pipeline]
+        source: [aniwaves, anikoto, mkissa, animenosub, full_pipeline]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

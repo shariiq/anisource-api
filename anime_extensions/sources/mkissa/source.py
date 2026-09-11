@@ -116,14 +116,16 @@ class MKissa(Source):
             "Referer": "https://youtu-chan.com/",
         }
 
-        try:
-            data = await self.context.http.post_json(
-                f"{self.api_url}/api", json_data=payload, headers=headers
-            )
-        except (HttpError, ParsingError) as error:
-            log.warning("MKissa GraphQL request failed: %s", error)
-            return {}
-        return data if isinstance(data, dict) else {}
+        data = await self.context.http.post_json(
+            f"{self.api_url}/api", json_data=payload, headers=headers
+        )
+        if not isinstance(data, dict):
+            raise ParsingError(f"MKissa: Expected dict response, got {type(data)}")
+
+        if "errors" in data:
+            raise ParsingError(f"MKissa: GraphQL errors in response: {data['errors']}")
+
+        return data
 
     async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
         """Fetch popular anime."""
@@ -362,21 +364,22 @@ class MKissa(Source):
             show_id = variables["showId"]
             translation_type = variables["translationType"]
             episode_string = variables["episodeString"]
-        except json.JSONDecodeError, KeyError, TypeError:
-            log.warning("MKissa received an invalid episode identifier")
-            return []
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            raise ParsingError(f"MKissa: invalid episode identifier: {e}") from e
 
         if not all(
             isinstance(value, str) and value
             for value in (show_id, translation_type, episode_string)
         ):
-            return []
+            raise ParsingError("MKissa: missing or empty required parameters in episode identifier")
+
         variables = {
             "showId": show_id,
             "translationType": translation_type,
             "episodeString": episode_string,
         }
 
+        last_error = None
         for attempt in range(2):
             try:
                 material = await self.key_manager.get_material(force_refresh=attempt > 0)
@@ -387,8 +390,7 @@ class MKissa(Source):
                     return streams
                 message = self.key_manager.api_error_message(body)
                 if message:
-                    log.warning(message)
-                    return []
+                    raise ParsingError(f"MKissa API blocked: {message}")
             except (
                 CryptoError,
                 HttpError,
@@ -396,11 +398,16 @@ class MKissa(Source):
                 json.JSONDecodeError,
                 ValueError,
             ) as error:
+                last_error = error
                 log.warning("MKissa stream attempt %s failed: %s", attempt + 1, error)
 
             self.key_manager.invalidate()
             if attempt == 0:
                 self.key_manager.invalidate_build()
+
+        if last_error is not None:
+            raise last_error
+
         return []
 
     async def _get_stream_response(self, material: Any, variables: dict[str, str]) -> str:

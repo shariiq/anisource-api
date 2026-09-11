@@ -1,7 +1,10 @@
 # ==============================================================================
 # Modern 2026 High-Performance Multi-Stage Dockerfile (uv-powered)
 # ==============================================================================
-FROM ghcr.io/astral-sh/uv:0.12.12-python3.14-trixie AS builder
+FROM python:3.14.7-slim-bookworm AS builder
+
+# Install uv (astral-sh pattern)
+COPY --from=ghcr.io/astral-sh/uv:0.12.12 /uv /uvx /bin/
 
 WORKDIR /app
 
@@ -15,14 +18,18 @@ COPY pyproject.toml README.md ./
 # Install dependencies into virtual environment
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv /app/.venv && \
-    uv pip install --no-cache .
+    uv pip compile pyproject.toml -o /tmp/requirements.txt && \
+    uv pip install --no-cache -r /tmp/requirements.txt
 
 # Copy source code and install project
 COPY anime_extensions/ anime_extensions/
 COPY anime_extensions_api/ anime_extensions_api/
 COPY docs/ docs/
 
+# Build native C extension for PoW solver and install project
 RUN --mount=type=cache,target=/root/.cache/uv \
+    apt-get update && apt-get install -y gcc && \
+    gcc -O3 -shared -fPIC anime_extensions/utils/_byse_pow_dll.c -o anime_extensions/utils/_byse_pow.so && \
     uv pip install --no-cache -e .
 
 # ==============================================================================

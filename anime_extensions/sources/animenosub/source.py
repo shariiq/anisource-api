@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from ...core.errors import ExtractorError, ParsingError
+from ...core.errors import ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.registry import register_source
 from ...core.source import Source
@@ -166,10 +166,7 @@ class AnimeNoSub(Source):
 
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
         embed_url = await self._resolve_embed_url(server_id)
-        try:
-            extractor = self.context.runtime.resolve_extractor(embed_url)
-        except ExtractorError:
-            return []
+        extractor = self.context.runtime.resolve_extractor(embed_url)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Moon":
             kwargs["site_url"] = self.base_url

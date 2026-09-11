@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import logging
 import secrets
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlparse
 
-from ..core.errors import ExtractorError
+from ..core.errors import ExtractorError, ParsingError
 from ..core.extractor import Extractor
 from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
-
-if TYPE_CHECKING:
-    pass
 from ..utils.crypto import (
     b64url_encode,
     decrypt_byse_playback,
@@ -23,17 +20,25 @@ from ..utils.crypto import (
 )
 from ..utils.m3u8 import parse_m3u8_streams
 
-log = logging.getLogger(__name__)
-
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
 )
 
+# Maximum time to spend solving the Proof-of-Work challenge.
+# High difficulties (d16+) can take minutes, so we cap it to avoid
+# blocking the event loop indefinitely.
+POW_TIMEOUT_SECONDS = 60
+
 
 @register_extractor(r"byse|byfms|filemoon|gn1r5n")
 class ByseExtractor(Extractor):
-    """Extractor for Byse/BYFMS video provider."""
+    """Extractor for Byse/BYFMS video provider.
+
+    Handles multi-stage challenge/attestation/PoW/playback flow.
+    The Proof-of-Work solver is CPU-intensive and runs in a thread pool
+    with an explicit timeout to avoid blocking the event loop.
+    """
 
     name = "Byse"
 
@@ -76,16 +81,12 @@ class ByseExtractor(Extractor):
         embed_origin = kwargs.get("embed_origin", "")
         label_prefix = kwargs.get("label_prefix", "")
 
-        session = self.context.http.session
-        if not session:
-            raise ExtractorError("Byse: runtime HTTP client is not started")
-
         parsed_url = urlparse(embed_url)
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
         path_segments = [s for s in parsed_url.path.split("/") if s]
         if len(path_segments) < 2:
-            raise ExtractorError(f"Byse: could not read media id from {embed_url}")
+            raise ParsingError(f"Byse: could not read media id from {embed_url}")
 
         media_id = path_segments[1]
 
@@ -99,10 +100,9 @@ class ByseExtractor(Extractor):
 
         # 1. Challenge
         challenge_url = f"{origin}/api/videos/access/challenge"
-        async with session.post(challenge_url, headers=base_headers, json={}) as resp:
-            if resp.status != 200:
-                raise ExtractorError(f"Byse: challenge failed with status {resp.status}")
-            challenge = await resp.json()
+        challenge = await self.context.http.post_json(
+            challenge_url, headers=base_headers, json_data={}
+        )
 
         nonce = challenge["nonce"]
         challenge_id = challenge["challenge_id"]
@@ -124,10 +124,9 @@ class ByseExtractor(Extractor):
         }
 
         attest_url = f"{origin}/api/videos/access/attest"
-        async with session.post(attest_url, headers=base_headers, json=attest_payload) as resp:
-            if resp.status != 200:
-                raise ExtractorError(f"Byse: attest failed with status {resp.status}")
-            attest = await resp.json()
+        attest = await self.context.http.post_json(
+            attest_url, headers=base_headers, json_data=attest_payload
+        )
 
         fingerprint = {
             "token": attest["token"],
@@ -149,17 +148,25 @@ class ByseExtractor(Extractor):
 
         # 3. Captcha challenge
         captcha_url = f"{origin}/api/videos/{media_id}/embed/captcha"
-        async with session.post(
+        captcha = await self.context.http.post_json(
             captcha_url,
             headers=gate_headers,
-            json={"fingerprint": fingerprint},
-        ) as resp:
-            if resp.status != 200:
-                raise ExtractorError(f"Byse: captcha request failed with status {resp.status}")
-            captcha = await resp.json()
+            json_data={"fingerprint": fingerprint},
+        )
 
         # 4. Solve PoW & Verify
-        solution = solve_byse_pow(captcha["pow_nonce"], captcha["pow_difficulty"])
+        # The PoW solver is CPU-intensive and can take minutes for high difficulties.
+        # Run it in a thread pool with an explicit timeout to avoid blocking the event loop.
+        try:
+            async with asyncio.timeout(POW_TIMEOUT_SECONDS):
+                solution = await asyncio.to_thread(
+                    solve_byse_pow, captcha["pow_nonce"], captcha["pow_difficulty"]
+                )
+        except TimeoutError as exc:
+            raise ExtractorError(
+                f"Byse: Proof-of-Work solver timed out after {POW_TIMEOUT_SECONDS}s"
+            ) from exc
+
         verify_payload = {
             "pow_token": captcha["pow_token"],
             "solution": solution,
@@ -167,35 +174,31 @@ class ByseExtractor(Extractor):
         }
 
         verify_url = f"{origin}/api/videos/{media_id}/embed/captcha/verify"
-        async with session.post(verify_url, headers=gate_headers, json=verify_payload) as resp:
-            if resp.status != 200:
-                raise ExtractorError(f"Byse: verify request failed with status {resp.status}")
-            verify = await resp.json()
+        verify = await self.context.http.post_json(
+            verify_url, headers=gate_headers, json_data=verify_payload
+        )
 
         if verify.get("status") != "ok":
             raise ExtractorError(f"Byse: PoW verification failed ({verify.get('status')})")
 
         captcha_token = verify.get("token")
         if not captcha_token:
-            raise ExtractorError("Byse: missing captcha token in verification response")
+            raise ParsingError("Byse: missing captcha token in verification response")
 
         # 5. Playback
         playback_headers = dict(gate_headers)
         playback_headers["X-Captcha-Token"] = captcha_token
 
         playback_url = f"{origin}/api/videos/{media_id}/embed/playback"
-        async with session.post(
+        playback_data = await self.context.http.post_json(
             playback_url,
             headers=playback_headers,
-            json={"fingerprint": fingerprint},
-        ) as resp:
-            if resp.status != 200:
-                raise ExtractorError(f"Byse: playback request failed with status {resp.status}")
-            playback_data = await resp.json()
+            json_data={"fingerprint": fingerprint},
+        )
 
         encrypted_playback = playback_data.get("playback")
         if not encrypted_playback:
-            raise ExtractorError("Byse: no encrypted playback payload received")
+            raise ParsingError("Byse: no encrypted playback payload received")
 
         # 6. Decrypt Playback
         decrypted_json_str = decrypt_byse_playback(encrypted_playback)
@@ -226,27 +229,22 @@ class ByseExtractor(Extractor):
 
             # If it's an m3u8 playlist, parse it
             if ".m3u8" in src_url:
-                try:
-                    async with session.get(
-                        src_url, headers={"Referer": video_referer, "User-Agent": USER_AGENT}
-                    ) as hls_resp:
-                        if hls_resp.status == 200:
-                            hls_text = await hls_resp.text(errors="replace")
-                            parsed_streams = parse_m3u8_streams(
-                                hls_text,
-                                src_url,
-                                referer=video_referer,
-                                subtitles=subtitles,
-                                default_headers={
-                                    "User-Agent": USER_AGENT,
-                                    "Referer": video_referer,
-                                },
-                                label_prefix=prefix,
-                            )
-                            streams.extend(parsed_streams)
-                            continue
-                except Exception as e:
-                    log.warning("Failed to parse Byse m3u8 playlist: %s", e)
+                hls_text = await self.context.http.get(
+                    src_url, headers={"Referer": video_referer, "User-Agent": USER_AGENT}
+                )
+                parsed_streams = parse_m3u8_streams(
+                    hls_text,
+                    src_url,
+                    referer=video_referer,
+                    subtitles=subtitles,
+                    default_headers={
+                        "User-Agent": USER_AGENT,
+                        "Referer": video_referer,
+                    },
+                    label_prefix=prefix,
+                )
+                streams.extend(parsed_streams)
+                continue
 
             # Fallback direct video stream
             streams.append(
@@ -258,5 +256,8 @@ class ByseExtractor(Extractor):
                     is_hls=".m3u8" in src_url,
                 )
             )
+
+        if not streams:
+            raise ParsingError("Byse: playback metadata did not contain usable streams")
 
         return streams

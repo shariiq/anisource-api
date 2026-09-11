@@ -45,22 +45,10 @@ async def test_full_extraction_flow(animenosub_source: AnimeNoSub) -> None:
     episodes = await animenosub_source.get_episodes(anime.id)
     assert len(episodes) > 0
 
-    streams: list[Stream] = []
-    for ep in episodes[:3]:
-        try:
-            servers = await animenosub_source.get_servers(ep.id)
-        except Exception:
-            continue
+    episode = episodes[0]
+    servers = await animenosub_source.get_servers(episode.id)
+    assert servers, "Expected at least one server"
 
-        for srv in servers[:3]:
-            try:
-                streams = await animenosub_source.get_streams(ep.id, srv.id)
-                if streams:
-                    break
-            except Exception:
-                continue
-        if streams:
-            break
-
-    assert len(streams) > 0, "Expected at least one playable stream"
+    streams: list[Stream] = await animenosub_source.get_streams(episode.id, servers[0].id)
+    assert streams, "Expected at least one playable stream"
     assert streams[0].url.startswith("http")

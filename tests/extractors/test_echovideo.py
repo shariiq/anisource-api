@@ -91,3 +91,12 @@ async def test_echovideo_extractor_quality_files(mock_context):
     assert any("Server 2 - 1080p" in s.quality for s in streams)
     assert any("Server 2 - 720p" in s.quality for s in streams)
     assert all(s.url.endswith(".mp4") for s in streams)
+
+
+def test_echovideo_pattern_matches_dghg():
+    """Resolve DGHG-branded embed URLs to EchoVideoExtractor."""
+    from anime_extensions.core.registry import _EXTRACTOR_REGISTRY
+
+    extractor_cls = _EXTRACTOR_REGISTRY.resolve("https://dghg.example.com/embed/12345")
+
+    assert extractor_cls is EchoVideoExtractor

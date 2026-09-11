@@ -29,9 +29,9 @@ DATSAV_QUALITY_LABELS = {
 }
 
 
-@register_extractor(r"vidplay|mycloud|datsav|echovideo")
+@register_extractor(r"vidplay|mycloud|datsav|dghg|echovideo")
 class EchoVideoExtractor(Extractor):
-    """Extractor for Vidplay / MyCloud / DatSaV (play.echovideo.ru family)."""
+    """Extractor for Vidplay / MyCloud / DatSaV / DGHG (play.echovideo.ru family)."""
 
     name = "EchoVideo"
 

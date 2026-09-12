@@ -8,6 +8,7 @@ from .core.errors import (
     ParsingError,
     SourceError,
     TimeoutError,
+    UnsupportedCapabilityError,
     UpstreamNotFound,
     UpstreamRateLimited,
     UpstreamUnavailable,
@@ -24,4 +25,5 @@ __all__ = [
     "UpstreamNotFound",
     "UpstreamRateLimited",
     "UpstreamUnavailable",
+    "UnsupportedCapabilityError",
 ]

@@ -7,6 +7,19 @@ from datetime import datetime
 from enum import StrEnum
 
 
+@dataclass(slots=True)
+class Page[T]:
+    """A paginated result set.
+
+    Used for search, popular, and latest listings.
+    """
+
+    items: list[T]
+    page: int
+    has_next: bool
+    total_returned: int = 0
+
+
 class AnimeStatus(StrEnum):
     """The airing status of an anime."""
 

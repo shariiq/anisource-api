@@ -30,7 +30,7 @@ EPISODES_HTML = """
 def source() -> AnimeNoSub:
     context = MagicMock()
     context.http = MagicMock()
-    context.runtime = MagicMock()
+    context.extractors = MagicMock()
     return AnimeNoSub(context=context)
 
 
@@ -67,6 +67,6 @@ async def test_servers_and_stream_delegation(source: AnimeNoSub):
     extractor = MagicMock(name="extractor")
     extractor.name = "VidMoly"
     extractor.extract = AsyncMock(return_value=[])
-    source.context.runtime.resolve_extractor.return_value = extractor
+    source.context.extractors.resolve.return_value = extractor
     assert await source.get_streams("unused", servers[0].id) == []
-    source.context.runtime.resolve_extractor.assert_called_once_with("https://vidmoly.biz/embed-a")
+    source.context.extractors.resolve.assert_called_once_with("https://vidmoly.biz/embed-a")

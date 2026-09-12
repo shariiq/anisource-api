@@ -14,7 +14,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream
 from ..utils.crypto import b64url_decode
 from ..utils.m3u8 import parse_m3u8_streams
@@ -22,7 +21,6 @@ from ..utils.m3u8 import parse_m3u8_streams
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"bysesayeveum|fmoon|filemoon|moonembed")
 class MoonExtractor(Extractor):
     """Extractor for Moon and variations like fmoon / filemoon / bysesayeveum."""
 

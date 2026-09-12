@@ -12,7 +12,6 @@ from bs4 import BeautifulSoup
 from ..core.errors import ParsingError
 from ..core.extractor import Extractor
 from ..core.models import Stream, Subtitle
-from ..core.registry import register_extractor
 from ..utils.m3u8 import parse_m3u8_streams
 from ..utils.unpacker import Unpacker
 
@@ -29,9 +28,6 @@ _DOMAINS = [
 ]
 
 
-@register_extractor(
-    r"streamwish\.\w+|wish\w*\.\w+|sw\w*\.\w+|niramirus\.\w+|medixiru\.\w+|streamwish"
-)
 class StreamWishExtractor(Extractor):
     """Extractor for StreamWish video hosting and its mirrors.
 

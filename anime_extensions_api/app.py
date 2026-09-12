@@ -16,6 +16,7 @@ from anime_extensions.exceptions import (
     AnimeExtensionError,
     HttpError,
     ParsingError,
+    UnsupportedCapabilityError,
     UpstreamNotFound,
     UpstreamRateLimited,
 )
@@ -148,6 +149,14 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     async def parsing_error_handler(request: Request, exc: ParsingError) -> JSONResponse:
         return _upstream_error_response(
             request, status.HTTP_502_BAD_GATEWAY, "UPSTREAM_PARSE_ERROR", str(exc)
+        )
+
+    @app.exception_handler(UnsupportedCapabilityError)
+    async def unsupported_capability_handler(
+        request: Request, exc: UnsupportedCapabilityError
+    ) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_501_NOT_IMPLEMENTED, "UNSUPPORTED_CAPABILITY", str(exc)
         )
 
     @app.exception_handler(HttpError)

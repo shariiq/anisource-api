@@ -15,8 +15,6 @@ from .core import (
     SourceRegistry,
     Stream,
     Subtitle,
-    register_extractor,
-    register_source,
 )
 from .exceptions import (
     AnimeExtensionError,
@@ -71,8 +69,6 @@ __all__ = [
     "VidMolyExtractor",
     "VtubeExtractor",
     "WolfStreamExtractor",
-    "register_extractor",
-    "register_source",
 ]
 
 __version__ = "0.3.0"

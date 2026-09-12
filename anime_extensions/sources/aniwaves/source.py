@@ -10,9 +10,8 @@ from typing import TYPE_CHECKING, Any
 from bs4 import BeautifulSoup
 
 from ...core.metadata import SourceCapability, SourceMetadata
-from ...core.registry import register_source
 from ...core.source import Source
-from ...models import Anime, Episode, Server, Stream
+from ...models import Anime, Episode, Page, Server, Stream
 from ...utils.crypto import vrf_encrypt
 
 if TYPE_CHECKING:
@@ -21,7 +20,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_source
 class AniWaves(Source):
     """AniWaves anime source."""
 
@@ -89,27 +87,35 @@ class AniWaves(Source):
             request_headers.update(headers)
         return await self.context.http.get_json(url, headers=request_headers, params=params)
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
         """Fetch popular/trending anime."""
-        return self._parse_listing(await self._request(f"{self.base_url}/trending/page/{page}"))
+        items, has_next = self._parse_listing(
+            await self._request(f"{self.base_url}/trending/page/{page}")
+        )
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
         """Fetch latest updated anime."""
-        return self._parse_listing(
+        items, has_next = self._parse_listing(
             await self._request(
                 f"{self.base_url}/filter", params={"sort_by": "last_updated", "page": page}
             )
         )
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
         """Search anime by query."""
         if query.startswith("#"):
             slug = re.sub(r"[^a-z0-9-]", "", query[1:].strip().lower().replace(" ", "-"))
             suffix = "" if page == 1 else f"/page/{page}"
-            return self._parse_listing(await self._request(f"{self.base_url}/tags/{slug}{suffix}"))
-        return self._parse_listing(
+            items, has_next = self._parse_listing(
+                await self._request(f"{self.base_url}/tags/{slug}{suffix}")
+            )
+            return Page(items=items, page=page, has_next=has_next)
+        items, has_next = self._parse_listing(
             await self._request(f"{self.base_url}/filter", params={"keyword": query, "page": page})
         )
+        return Page(items=items, page=page, has_next=has_next)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse an anime listing page."""
@@ -276,7 +282,7 @@ class AniWaves(Source):
         if not embed_url:
             return []
 
-        extractor = self.context.runtime.resolve_extractor(embed_url)
+        extractor = self.context.extractors.resolve(embed_url)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Doodstream":
             kwargs["quality_prefix"] = kwargs.pop("label_prefix")

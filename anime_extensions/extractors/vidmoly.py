@@ -10,14 +10,12 @@ from bs4 import BeautifulSoup
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream
 from ..utils.m3u8 import parse_m3u8_streams
 
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"vidmoly")
 class VidMolyExtractor(Extractor):
     """Extractor for VidMoly."""
 

@@ -13,9 +13,8 @@ from bs4 import BeautifulSoup
 
 from ...core.errors import CryptoError, ExtractorError, HttpError, ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
-from ...core.registry import register_source
 from ...core.source import Source
-from ...models import Anime, Episode, Server, Stream, Subtitle
+from ...models import Anime, Episode, Page, Server, Stream, Subtitle
 from ...utils.mkissa_crypto import MKissaCrypto
 from .key_manager import MKissaKeyManager
 
@@ -61,7 +60,6 @@ _INTERNAL_HOSTER_PATTERNS = tuple(
 )
 
 
-@register_source
 class MKissa(Source):
     """MKissa anime source."""
 
@@ -127,7 +125,7 @@ class MKissa(Source):
 
         return data
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
         """Fetch popular anime."""
         query = """
         query($type: VaildPopularTypeEnumType!, $size: Int!, $page: Int, $dateRange: Int) {
@@ -164,9 +162,9 @@ class MKissa(Source):
         ]
 
         has_next = len(animes) == 26
-        return animes, has_next
+        return Page(items=animes, page=page, has_next=has_next)
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
         """Fetch latest updates."""
         query = """
         query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
@@ -203,9 +201,9 @@ class MKissa(Source):
         animes = [self._parse_anime(edge) for edge in edges]
 
         has_next = len(animes) == 26
-        return animes, has_next
+        return Page(items=animes, page=page, has_next=has_next)
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
         """Search anime."""
         gql_query = """
         query($search: SearchInput, $limit: Int, $page: Int, $translationType: VaildTranslationTypeEnumType, $countryOrigin: VaildCountryOriginEnumType) {
@@ -243,7 +241,7 @@ class MKissa(Source):
         animes = [self._parse_anime(edge) for edge in edges]
 
         has_next = len(animes) == 26
-        return animes, has_next
+        return Page(items=animes, page=page, has_next=has_next)
 
     async def get_details(self, anime_id: str) -> Anime:
         """Get anime details."""
@@ -497,7 +495,7 @@ class MKissa(Source):
 
             # Attempt to resolve using registered extractors
             try:
-                extractor = self.context.runtime.resolve_extractor(source_url)
+                extractor = self.context.extractors.resolve(source_url)
             except ExtractorError:
                 extractor = None
 

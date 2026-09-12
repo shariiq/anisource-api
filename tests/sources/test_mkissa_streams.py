@@ -84,7 +84,7 @@ async def test_external_source_uses_registered_extractor() -> None:
     extractor.extract = AsyncMock(
         return_value=[Stream(url="https://cdn.example/video.mp4", quality="Example - 1080p")]
     )
-    context.runtime.resolve_extractor.return_value = extractor
+    context.extractors.resolve.return_value = extractor
     source = MKissa(context=context)
 
     streams = await source._streams_from_sources(
@@ -97,7 +97,7 @@ async def test_external_source_uses_registered_extractor() -> None:
         ]
     )
 
-    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/abc")
+    context.extractors.resolve.assert_called_once_with("https://embed.example/e/abc")
     extractor.extract.assert_awaited_once()
     assert [stream.url for stream in streams] == ["https://cdn.example/video.mp4"]
 
@@ -148,7 +148,7 @@ async def test_external_source_extractor_error_fallback() -> None:
     from anime_extensions.core.errors import ExtractorError
 
     context = MagicMock()
-    context.runtime.resolve_extractor.side_effect = ExtractorError("Not found")
+    context.extractors.resolve.side_effect = ExtractorError("Not found")
     source = MKissa(context=context)
 
     streams = await source._streams_from_sources(
@@ -161,7 +161,7 @@ async def test_external_source_extractor_error_fallback() -> None:
         ]
     )
 
-    context.runtime.resolve_extractor.assert_called_once_with("https://embed.example/e/abc.m3u8")
+    context.extractors.resolve.assert_called_once_with("https://embed.example/e/abc.m3u8")
     assert len(streams) == 1
     assert streams[0].url == "https://embed.example/e/abc.m3u8"
     assert streams[0].is_hls is True

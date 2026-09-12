@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 
 from anime_extensions.core import Source, SourceCapability, SourceMetadata
 from anime_extensions.exceptions import AnimeExtensionError
-from anime_extensions.models import Anime, Episode, Server, Stream, Subtitle
+from anime_extensions.models import Anime, Episode, Page, Server, Stream, Subtitle
 from anime_extensions_api.app import create_app
 from anime_extensions_api.config import APISettings, CacheSettings
 from anime_extensions_api.services.cache import AsyncTTLCache
@@ -21,44 +21,64 @@ class MockSource(Source):
         id="mock",
         name="MockSource",
         base_url="https://mock.example.com",
-        capabilities={SourceCapability.SEARCH, SourceCapability.DETAILS},
+        capabilities={
+            SourceCapability.SEARCH,
+            SourceCapability.DETAILS,
+            SourceCapability.POPULAR,
+            SourceCapability.LATEST,
+            SourceCapability.EPISODES,
+            SourceCapability.SERVERS,
+            SourceCapability.STREAMS,
+        },
     )
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
         if page > 2:
-            return [], False
-        return [
-            Anime(
-                id="mock-1",
-                title="Mock Anime 1",
-                url="https://mock.example.com/watch/mock-1",
-                thumbnail="https://mock.example.com/thumb1.jpg",
-                genres=["Action", "Adventure"],
-                status="completed",
-                score=8.5,
-            )
-        ], True
+            return Page(items=[], page=page, has_next=False)
+        return Page(
+            items=[
+                Anime(
+                    id="mock-1",
+                    title="Mock Anime 1",
+                    url="https://mock.example.com/watch/mock-1",
+                    thumbnail="https://mock.example.com/thumb1.jpg",
+                    genres=["Action", "Adventure"],
+                    status="completed",
+                    score=8.5,
+                )
+            ],
+            page=page,
+            has_next=True,
+        )
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
-        return [
-            Anime(
-                id="mock-2",
-                title="Mock Anime 2",
-                url="https://mock.example.com/watch/mock-2",
-                status="ongoing",
-            )
-        ], False
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
+        return Page(
+            items=[
+                Anime(
+                    id="mock-2",
+                    title="Mock Anime 2",
+                    url="https://mock.example.com/watch/mock-2",
+                    status="ongoing",
+                )
+            ],
+            page=page,
+            has_next=False,
+        )
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
         if query == "notfound":
-            return [], False
-        return [
-            Anime(
-                id="mock-1",
-                title=f"Result for {query}",
-                url="https://mock.example.com/watch/mock-1",
-            )
-        ], False
+            return Page(items=[], page=page, has_next=False)
+        return Page(
+            items=[
+                Anime(
+                    id="mock-1",
+                    title=f"Result for {query}",
+                    url="https://mock.example.com/watch/mock-1",
+                )
+            ],
+            page=page,
+            has_next=False,
+        )
 
     async def get_details(self, anime_id: str) -> Anime:
         if anime_id == "invalid":
@@ -116,6 +136,38 @@ class MockSource(Source):
         ]
 
 
+class LimitedMockSource(Source):
+    """Mock source with minimal capabilities for capability enforcement testing."""
+
+    metadata = SourceMetadata(
+        id="limited",
+        name="LimitedMockSource",
+        base_url="https://limited.example.com",
+        capabilities={SourceCapability.SEARCH},
+    )
+
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
+
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
+
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
+
+    async def get_details(self, anime_id: str) -> Anime:
+        raise NotImplementedError
+
+    async def get_episodes(self, anime_id: str) -> list[Episode]:
+        raise NotImplementedError
+
+    async def get_servers(self, episode_id: str) -> list[Server]:
+        raise NotImplementedError
+
+    async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
+        raise NotImplementedError
+
+
 @pytest.fixture
 async def app():
     """Create an initialized application with an injected mock source."""
@@ -126,6 +178,7 @@ async def app():
     source_manager = SourceManager()
     await source_manager.initialize()
     source_manager._runtime.sources.register(MockSource)
+    source_manager._runtime.sources.register(LimitedMockSource)
     app.state.source_manager = source_manager
     app.state.cache = AsyncTTLCache(max_items=1000)
     try:
@@ -292,3 +345,21 @@ async def test_upstream_error_handling(app):
         res_stream = await client.get("/api/v1/mock/streams/mock-1-ep-1?server_id=broken")
         assert res_stream.status_code == 502
         assert res_stream.json()["error"]["code"] == "UPSTREAM_SOURCE_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_unsupported_capability(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # LimitedMockSource only has capability SEARCH
+        res_popular = await client.get("/api/v1/limited/popular")
+        assert res_popular.status_code == 501
+        assert res_popular.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+        res_details = await client.get("/api/v1/limited/anime/some-id")
+        assert res_details.status_code == 501
+        assert res_details.json()["error"]["code"] == "UNSUPPORTED_CAPABILITY"
+
+        # Search should still work (will return empty page)
+        res_search = await client.get("/api/v1/limited/search?q=test")
+        assert res_search.status_code == 200

@@ -10,7 +10,6 @@ from urllib.parse import urlparse
 
 from ..core.errors import ExtractorError, ParsingError
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
 from ..utils.crypto import (
     b64url_encode,
@@ -33,7 +32,6 @@ USER_AGENT = (
 POW_TIMEOUT_SECONDS = 180
 
 
-@register_extractor(r"byfms|gn1r5n|bysekoze|byse(?!sayeveum)")
 class ByseExtractor(Extractor):
     """Extractor for Byse/BYFMS video provider.
 

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 from ..core.errors import ExtractorError
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream
 from ..utils.unpacker import Unpacker
 
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"mp4upload\.com")
 class Mp4UploadExtractor(Extractor):
     """Extractor for Mp4Upload video hosting."""
 

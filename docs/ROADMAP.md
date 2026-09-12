@@ -4,7 +4,7 @@ This document tracks the surgical architectural enhancements for the `anime-exte
 
 ## Implementation Status
 
-- **Status**: In Progress
+- **Status**: Phase 1 & 2 Complete — Phase 3 Next
 - **Last Updated**: 2026-09-12
 
 ---
@@ -13,15 +13,15 @@ This document tracks the surgical architectural enhancements for the `anime-exte
 
 - [x] **Config System Foundation**: Typed configuration dataclasses (`anime_extensions/core/config.py`)
 - [x] **Documentation**: Extractor Contributor Guide (`docs/WRITING_EXTRACTORS.md`)
-- [ ] **1. Explicit Plugin Catalogue & Runtime-Owned Registries**: Remove global decorator mutation side-effects on module import; runtime directly registers explicit `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS`.
-- [ ] **2. Deterministic Extractor Resolution & Conflict Semantics**: Introduce explicit registration priority on extractors and raise `DuplicateSourceError` on collisions. In a plugin architecture, implicit resolution order is a correctness issue.
-- [ ] **3. Capability & Source Contract Reconciliation**: Add `supports(capability)` on `Source`; raise typed `UnsupportedCapabilityError` and enforce in FastAPI handlers (HTTP 501/400).
-- [ ] **4. Decouple Context from Runtime**: Remove `SourceContext.runtime` to prevent composition-root leakage and service locator anti-patterns; restrict context strictly to `http` and `extractors`.
-- [ ] **5. Single Composition Root (Remove Redundant `SourceManager`)**: Bind `ExtensionRuntime` directly into `app.state` and provide clean FastAPI dependencies (`RuntimeDep`, `SourceDep`).
+- [x] **1. Explicit Plugin Catalogue & Runtime-Owned Registries**: Remove global decorator mutation side-effects on module import; runtime directly registers explicit `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS`.
+- [x] **2. Deterministic Extractor Resolution & Conflict Semantics**: Introduce explicit registration priority on extractors and raise `DuplicateSourceError` on collisions. In a plugin architecture, implicit resolution order is a correctness issue.
+- [x] **3. Capability & Source Contract Reconciliation**: Add `supports(capability)` on `Source`; raise typed `UnsupportedCapabilityError` and enforce in FastAPI handlers (HTTP 501/400).
+- [x] **4. Decouple Context from Runtime**: Remove `SourceContext.runtime` to prevent composition-root leakage and service locator anti-patterns; restrict context strictly to `http` and `extractors`.
+- [x] **5. Single Composition Root (Remove Redundant `SourceManager`)**: Bind `ExtensionRuntime` directly into `app.state` and provide clean FastAPI dependencies (`RuntimeDep`, `SourceDep`).
 - [ ] **6. Complete HTTP Transport Error Mapping**: Map all `aiohttp` transport exceptions (`ClientConnectorError`, `ClientSSLError`, DNS resolution failures) to typed SDK exceptions in `anime_extensions/core/errors.py`.
 - [ ] **7. Cache Hardening (Cancellation Shielding & FIFO Eviction)**: Wrap shared single-flight task awaiters in `asyncio.shield()`, formally document FIFO bounded eviction, and delete unused `@cached` decorator.
-- [ ] **8. `Page[T]` Domain Model & Direct Cache Serialization**: Replace raw `tuple[list[Anime], bool]` return types with a typed `Page[T]` dataclass; cache domain instances directly.
-- [ ] **9. Router Boilerplate Consolidation**: Consolidate repeated cache/fetch orchestration only where the abstraction stays explicit and type-safe. Do not force every endpoint through a generic helper if doing so hides endpoint semantics.
+- [x] **8. `Page[T]` Domain Model & Direct Cache Serialization**: Replace raw `tuple[list[Anime], bool]` return types with a typed `Page[T]` dataclass; cache domain instances directly.
+- [x] **9. Router Boilerplate Consolidation**: Consolidated cache/fetch orchestration via explicit `fetch_cached` helper; handlers remain traceable.
 - [ ] **10. Clean Public Root Package Namespace**: Export only SDK framework abstractions and contracts from `anime_extensions/__init__.py`, removing concrete plugin imports.
 - [ ] **11. Python Compatibility Target**: Reconcile `requires-python = ">=3.12"` in `pyproject.toml` with PyPI classifiers.
 

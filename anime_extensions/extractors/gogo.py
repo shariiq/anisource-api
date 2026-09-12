@@ -15,7 +15,6 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from ..core.errors import ExtractorError
 from ..core.extractor import Extractor
 from ..core.models import Stream
-from ..core.registry import register_extractor
 from ..utils.m3u8 import parse_m3u8_streams
 
 if TYPE_CHECKING:
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"gogo|vidstreaming|playgo1\.cc|playtaku|vidcloud")
 class GogoStreamExtractor(Extractor):
     """Extractor for GogoStream / Vidstreaming video hosting."""
 

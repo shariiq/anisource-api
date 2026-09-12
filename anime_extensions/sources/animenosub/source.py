@@ -12,12 +12,10 @@ from bs4 import BeautifulSoup, Tag
 
 from ...core.errors import ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
-from ...core.registry import register_source
 from ...core.source import Source
-from ...models import Anime, Episode, Server, Stream
+from ...models import Anime, Episode, Page, Server, Stream
 
 
-@register_source
 class AnimeNoSub(Source):
     """English AnimeNoSub source backed by the AnimeStream WordPress theme."""
 
@@ -41,21 +39,24 @@ class AnimeNoSub(Source):
     id = metadata.id
     base_url = metadata.base_url
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
         html = await self.context.http.get(
             f"{self.base_url}/anime/", params={"page": page, "order": "popular"}
         )
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
         html = await self.context.http.get(
             f"{self.base_url}/anime/", params={"page": page, "order": "update"}
         )
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
         html = await self.context.http.get(f"{self.base_url}/page/{page}/", params={"s": query})
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         soup = BeautifulSoup(html, "html.parser")
@@ -166,7 +167,7 @@ class AnimeNoSub(Source):
 
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
         embed_url = await self._resolve_embed_url(server_id)
-        extractor = self.context.runtime.resolve_extractor(embed_url)
+        extractor = self.context.extractors.resolve(embed_url)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Moon":
             kwargs["site_url"] = self.base_url

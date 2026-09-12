@@ -6,12 +6,12 @@ import logging
 
 from fastapi import APIRouter, Query
 
-from anime_extensions.core.errors import UnsupportedCapabilityError
+from anime_extensions.core.errors import SourceNotFoundError, UnsupportedCapabilityError
 from anime_extensions.core.metadata import SourceCapability
 from anime_extensions.core.models import Server, Stream
 
 from ..config import get_settings
-from ..dependencies import CacheDep, ManagerDep
+from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import ServerSchema, StreamSchema
 from ._cache import fetch_cached
 
@@ -32,10 +32,12 @@ async def get_servers(
     source_id: str,
     episode_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[ServerSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.SERVERS):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.SERVERS)
 
@@ -71,10 +73,12 @@ async def get_streams(
         ..., description="Server identifier obtained from the /servers endpoint."
     ),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[StreamSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.STREAMS):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.STREAMS)
 

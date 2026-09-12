@@ -6,12 +6,12 @@ import logging
 
 from fastapi import APIRouter, Query
 
-from anime_extensions.core.errors import UnsupportedCapabilityError
+from anime_extensions.core.errors import SourceNotFoundError, UnsupportedCapabilityError
 from anime_extensions.core.metadata import SourceCapability
 from anime_extensions.core.models import Anime, Episode, Page
 
 from ..config import get_settings
-from ..dependencies import CacheDep, ManagerDep
+from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import (
     AnimeSchema,
     EpisodeSchema,
@@ -36,10 +36,12 @@ async def get_popular(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.POPULAR):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.POPULAR)
 
@@ -77,10 +79,12 @@ async def get_latest(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.LATEST):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.LATEST)
 
@@ -119,10 +123,12 @@ async def search_anime(
     q: str = Query(..., min_length=1, description="Search query string."),
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.SEARCH):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.SEARCH)
 
@@ -160,10 +166,12 @@ async def get_anime_details(
     source_id: str,
     anime_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> AnimeSchema:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.DETAILS):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.DETAILS)
 
@@ -196,10 +204,12 @@ async def get_episodes(
     source_id: str,
     anime_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[EpisodeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
     if not source.supports(SourceCapability.EPISODES):
         raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.EPISODES)
 

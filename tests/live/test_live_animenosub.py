@@ -9,13 +9,16 @@ from anime_extensions.sources.animenosub import AnimeNoSub
 async def animenosub_source():
     """Provide an initialized AnimeNoSub source for tests."""
     async with ExtensionRuntime() as runtime:
+        # Sources are already registered via _register_builtins() during start()
         yield runtime.get_source("animenosub")
 
 
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_get_popular(animenosub_source: AnimeNoSub) -> None:
-    animes, has_next = await animenosub_source.get_popular(page=1)
+    page_data = await animenosub_source.get_popular(page=1)
+    animes = page_data.items
+    has_next = page_data.has_next
     assert isinstance(has_next, bool)
     assert len(animes) > 0, "Expected at least one popular anime"
     assert isinstance(animes[0], Anime)
@@ -25,7 +28,8 @@ async def test_get_popular(animenosub_source: AnimeNoSub) -> None:
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_search(animenosub_source: AnimeNoSub) -> None:
-    results, has_next = await animenosub_source.search("One Piece", page=1)
+    page_data = await animenosub_source.search("One Piece", page=1)
+    results = page_data.items
     assert len(results) > 0
     found = any("one piece" in a.title.lower() for a in results)
     assert found
@@ -35,7 +39,8 @@ async def test_search(animenosub_source: AnimeNoSub) -> None:
 @pytest.mark.asyncio
 async def test_full_extraction_flow(animenosub_source: AnimeNoSub) -> None:
     """Test end-to-end extraction, finding any working server."""
-    results, _ = await animenosub_source.search("Attack on Titan", page=1)
+    page_data = await animenosub_source.search("Attack on Titan", page=1)
+    results = page_data.items
     assert results, "Search failed"
     anime = results[0]
 
@@ -68,7 +73,8 @@ async def test_full_extraction_flow(animenosub_source: AnimeNoSub) -> None:
 @pytest.mark.asyncio
 async def test_all_server_extraction(animenosub_source: AnimeNoSub) -> None:
     """Test stream extraction across all discovered AnimeNoSub servers."""
-    results, _ = await animenosub_source.search("Attack on Titan", page=1)
+    page_data = await animenosub_source.search("Attack on Titan", page=1)
+    results = page_data.items
     assert results, "Search failed"
     anime = results[0]
 

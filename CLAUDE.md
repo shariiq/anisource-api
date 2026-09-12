@@ -28,7 +28,7 @@ Operate at principal-engineer quality.
 - **API docs:** `https://anisource-api.onrender.com/docs`
 
 - **Stack:**
-  - Python 3.14.7, which exists as of September 2026
+  - Python 3.14.7, which does exists as of September 2026
   - `uv`
   - FastAPI
   - `aiohttp` for scraper HTTP

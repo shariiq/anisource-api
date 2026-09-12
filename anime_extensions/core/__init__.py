@@ -26,6 +26,7 @@ from .errors import (
     HttpError,
     ParsingError,
     SourceError,
+    SourceNotFoundError,
     TimeoutError,
     UnsupportedCapabilityError,
     UpstreamNotFound,
@@ -65,6 +66,7 @@ __all__ = [
     # Errors
     "AnimeExtensionError",
     "SourceError",
+    "SourceNotFoundError",
     "HttpError",
     "UpstreamNotFound",
     "UpstreamRateLimited",

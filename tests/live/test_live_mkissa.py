@@ -32,7 +32,8 @@ async def test_mkissa_pipeline_smoke(mkissa_source: MKissa):
 @pytest.mark.asyncio
 async def test_mkissa_graphql_connectivity(mkissa_source: MKissa):
     """Verify basic connectivity to the MKissa GraphQL API."""
-    results, has_next = await mkissa_source.search("One Piece")
+    page_data = await mkissa_source.search("One Piece")
+    results = page_data.items
     assert isinstance(results, list)
     # If results are found, they should have proper Anime model attributes
     if results:
@@ -43,7 +44,8 @@ async def test_mkissa_graphql_connectivity(mkissa_source: MKissa):
 @pytest.mark.asyncio
 async def test_mkissa_details_connectivity(mkissa_source: MKissa):
     """Verify that anime details can be fetched."""
-    results, _ = await mkissa_source.search("One Piece")
+    page_data = await mkissa_source.search("One Piece")
+    results = page_data.items
     assert results, "Search returned no results — cannot test details"
 
     details = await mkissa_source.get_details(results[0].id)

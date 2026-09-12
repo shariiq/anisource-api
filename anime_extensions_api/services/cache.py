@@ -6,11 +6,8 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from functools import wraps
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
-# Type variables for decorating functions
-F = TypeVar("F", bound=Callable[..., Any])
 T = TypeVar("T")
 
 log = logging.getLogger(__name__)
@@ -30,7 +27,7 @@ class CacheEntry:
 
 
 class AsyncTTLCache:
-    """In-memory cache with Time-To-Live (TTL) and LRU-like capacity bounding.
+    """In-memory cache with Time-To-Live (TTL) and FIFO capacity bounding.
 
     Includes single-flight request coalescing to prevent cache stampedes.
     """
@@ -84,9 +81,11 @@ class AsyncTTLCache:
                 task = asyncio.create_task(self._fetch_and_cache(key, coro, ttl_seconds))
                 self._inflight[key] = task
 
-        # Wait outside the lock so we don't block other keys
+        # Wait outside the lock so we don't block other keys.
+        # Shield against caller cancellation so disconnected clients do not
+        # abort the shared background fetch for other or subsequent callers.
         try:
-            return await task
+            return await asyncio.shield(task)
         except Exception:
             # If the task fails, whoever successfully fetches it later should not hit cache
             if key in self._cache:
@@ -106,13 +105,16 @@ class AsyncTTLCache:
                 self._inflight.pop(key, None)
 
     async def set(self, key: str, value: Any, ttl_seconds: int) -> None:
-        """Store a value with a given TTL in seconds."""
+        """Store a value with a given TTL in seconds.
+
+        When capacity is exceeded, expired items are evicted first. If capacity
+        remains exceeded, items are evicted in FIFO order based on insertion order.
+        """
         if len(self._cache) >= self.max_items:
             await self._evict_expired()
-            # If still full, drop a random item (simplified LRU approach)
+            # If still full, drop oldest inserted item (FIFO eviction via dict insertion order)
             if len(self._cache) >= self.max_items:
                 try:
-                    # Next iter removes the "oldest" inserted due to dict ordering
                     oldest_key = next(iter(self._cache))
                     del self._cache[oldest_key]
                 except StopIteration:
@@ -148,41 +150,3 @@ class AsyncTTLCache:
             "hit_rate_percent": round(hit_rate, 2),
             "inflight_requests": len(self._inflight),
         }
-
-
-def cached(key_builder: Callable[..., str], ttl_seconds: int = 1800) -> Callable[[F], F]:
-    """Decorator to cache an endpoint handler."""
-
-    def decorator(func: F) -> F:
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            # find cache dependency
-            cache = None
-            if len(args) > 0 and isinstance(args[0], AsyncTTLCache):
-                cache = args[0]
-            else:
-                for arg in args:
-                    if isinstance(arg, AsyncTTLCache):
-                        cache = arg
-                        break
-                if not cache:
-                    for arg in kwargs.values():
-                        if isinstance(arg, AsyncTTLCache):
-                            cache = arg
-                            break
-
-            key = key_builder(*args, **kwargs)
-            if not cache:
-                log.warning(
-                    f"No AsyncTTLCache found in arguments for {func.__name__} - skipping cache"
-                )
-                return await func(*args, **kwargs)
-
-            async def coro() -> Any:
-                return await func(*args, **kwargs)
-
-            return await cache.get_or_set(key, coro, ttl_seconds)
-
-        return cast(F, wrapper)
-
-    return decorator

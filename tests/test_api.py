@@ -5,13 +5,12 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from anime_extensions.core import Source, SourceCapability, SourceMetadata
+from anime_extensions.core import ExtensionRuntime, Source, SourceCapability, SourceMetadata
 from anime_extensions.exceptions import AnimeExtensionError
 from anime_extensions.models import Anime, Episode, Page, Server, Stream, Subtitle
 from anime_extensions_api.app import create_app
 from anime_extensions_api.config import APISettings, CacheSettings
 from anime_extensions_api.services.cache import AsyncTTLCache
-from anime_extensions_api.services.source_manager import SourceManager
 
 
 class MockSource(Source):
@@ -175,16 +174,16 @@ async def app():
         cache=CacheSettings(enabled=True, popular_ttl_seconds=60),
     )
     app = create_app(settings)
-    source_manager = SourceManager()
-    await source_manager.initialize()
-    source_manager._runtime.sources.register(MockSource)
-    source_manager._runtime.sources.register(LimitedMockSource)
-    app.state.source_manager = source_manager
+    runtime = ExtensionRuntime()
+    await runtime.start()
+    runtime.sources.register(MockSource)
+    runtime.sources.register(LimitedMockSource)
+    app.state.runtime = runtime
     app.state.cache = AsyncTTLCache(max_items=1000)
     try:
         yield app
     finally:
-        await source_manager.close()
+        await runtime.close()
         app.state.cache.clear()
 
 

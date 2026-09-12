@@ -73,3 +73,11 @@ class UnsupportedCapabilityError(SourceError):
         super().__init__(f"Source {source_id!r} does not support capability {capability!r}")
         self.source_id = source_id
         self.capability = capability
+
+
+class SourceNotFoundError(SourceError):
+    """Raised when a requested source is not found in the registry."""
+
+    def __init__(self, source_id: str) -> None:
+        super().__init__(f"Source with ID {source_id!r} not found")
+        self.source_id = source_id

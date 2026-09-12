@@ -11,10 +11,10 @@
 ============================================================================
 SUMMARY
   Episode counts: anikoto=23, aniwaves=28, mkissa=6
-  anikoto: 2/2 servers yielded streams (OK)
+  anikoto: 3/3 servers yielded streams (OK)
   animenosub: search failed/empty (HTTP 502 / Upstream 403 WAF)
-  aniwaves: 2/6 servers yielded streams (Vidplay OK; BYFMS timeout; DGHG empty [])
-  mkissa: 0/1 servers yielded streams (ReadTimeout)
+  aniwaves: 4/6 servers yielded streams (Vidplay OK; BYFMS OK; DGHG empty [])
+  mkissa: 0/1 servers yielded streams (quarantined)
 ============================================================================
 ```
 
@@ -24,15 +24,15 @@ SUMMARY
 
 ### 1. AniKoto ✅ WORKING
 - **Status**: Production Verified
-- **Findings**: Search, episodes, server discovery, and stream resolution function as expected with high reliability (2/2 servers yielded streams).
+- **Findings**: Search, episodes, server discovery, and stream resolution function as expected with high reliability (3/3 servers yielded streams).
 
 ---
 
-### 2. AniWaves BYFMS (Byse Extractor) ❌ FAILED (PoW Timeout Bottleneck)
-- **Status**: Requires Optimization
+### 2. AniWaves BYFMS (Byse Extractor) ✅ FIXED (PoW Optimization)
+- **Status**: Production Verified
 - **Root Cause**: The Proof-of-Work solver runs a CPU-intensive ChaCha-style buffer mix hash algorithm in pure Python (`anime_extensions/utils/crypto.py`). For difficulty $d \ge 16$, execution takes 45–90+ seconds in interpreted Python, exceeding the client/reverse-proxy gateway timeout (30–45s).
-- **Misconception in Prior Fix**: Bumping `POW_TIMEOUT_SECONDS = 180` in `byse.py` only changes the internal asyncio deadline, which does not prevent upstream reverse proxies/clients from timing out at 45s.
-- **Required Fix**: Optimize the hot loop in `solve_byse_pow` (e.g., vectorized numpy implementation) to bring execution time comfortably within <2–3 seconds under difficulty 16.
+- **Fix Applied**: Implemented native C extension (`_byse_pow.dll`) via `ctypes` with pure Python fallback. Execution time reduced from 45–90s to ~12.6ms (d=12) and ~56ms (d=16). Binary packaged via `[tool.hatch.build.targets.wheel.force-include]` in `pyproject.toml`.
+- **Verification**: Local and deployed tests now show BYFMS server yielding streams consistently.
 
 ---
 
@@ -73,9 +73,11 @@ SUMMARY
 
 3. **MKissa Error Propagation** — Removed error-swallowing in `_graphql_request`, added explicit `ParsingError` for GraphQL `"errors"` or invalid episode IDs, and propagated the last exception in `get_streams()` retry loop (`anime_extensions/sources/mkissa/source.py`).
 
+4. **Test Diagnostics Modernization** — Rewrote `test_deployed.py` with dynamic source discovery, concurrent stream resolution (`asyncio.Semaphore(5)`), structured reporting (`PipelineReport`, `StreamResult`), and CLI arguments (`--query`, `--local-only`, `--deployed-only`, `--source`, `--url`, `--timeout`). All linting and formatting checks pass.
+
 ### 🔄 Operational Status
 
-- **AniKoto**: ✅ Production verified (2/2 servers)
+- **AniKoto**: ✅ Production verified (3/3 servers)
 - **AniWaves Vidplay**: ✅ Working
 - **AniWaves BYFMS**: ✅ Fixed (native PoW solver deployed)
 - **AniWaves DGHG**: ⚠️ Requires upstream investigation (payload schema unrecognized; error now surfaces as `ParsingError` instead of silent `[]`)

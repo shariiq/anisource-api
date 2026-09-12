@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "anisource-api"
 version = "0.3.0"
-description = "Modern Python SDK and FastAPI backend for anime sources and extractors with decorator-based plugin discovery, centralized HTTP client, and single-flight caching."
+description = "Modern Python SDK and FastAPI backend for anime sources and extractors with catalogue-driven discovery, centralized HTTP client, and single-flight caching."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
@@ -20,8 +20,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Multimedia :: Video",

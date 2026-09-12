@@ -495,7 +495,8 @@ class MKissa(Source):
 
             # Attempt to resolve using registered extractors
             try:
-                extractor = self.context.extractors.resolve(source_url)
+                extractor_cls = self.context.extractors.resolve(source_url)
+                extractor = extractor_cls(self.context)
             except ExtractorError:
                 extractor = None
 

@@ -134,14 +134,16 @@ async def test_get_servers_filters_downloads_and_resolves_types(source: Anikoto)
 async def test_get_streams_resolves_registered_extractor(source: Anikoto):
     """Test external embeds delegate to the runtime extractor registry."""
     source._get_embed_link = AsyncMock(return_value="https://dood.to/e/abc")
-    extractor = MagicMock()
-    extractor.extract = AsyncMock(return_value=[])
-    source.context.extractors.resolve.return_value = extractor
+    extractor_instance = MagicMock()
+    extractor_instance.extract = AsyncMock(return_value=[])
+    extractor_cls = MagicMock(return_value=extractor_instance)
+    source.context.extractors.resolve.return_value = extractor_cls
 
     await source.get_streams("ep-id-1&epurl=/watch/frieren-1/ep-1", "srv-1")
 
     source.context.extractors.resolve.assert_called_once_with("https://dood.to/e/abc")
-    extractor.extract.assert_awaited_once_with("https://dood.to/e/abc", label_prefix="")
+    extractor_cls.assert_called_once_with(source.context)
+    extractor_instance.extract.assert_awaited_once_with("https://dood.to/e/abc", label_prefix="")
 
 
 def test_resolve_video_type(source: Anikoto):

@@ -11,7 +11,7 @@ This document tracks the surgical architectural enhancements for the `anime-exte
 
 ## Roadmap Checklist
 
-- [x] **Configuration Ownership Cleanup**: Removed the unused centralized configuration module; component-specific constants remain with their implementations while runtime concerns stay in `HttpClient` and `ExtensionRuntime`.
+- [x] **Configuration Ownership Cleanup**: Removed the unused `anime_extensions/core/config.py` module; component-specific constants remain with their implementations while runtime concerns stay in `HttpClient` and `ExtensionRuntime`.
 - [x] **Documentation**: Extractor Contributor Guide (`docs/WRITING_EXTRACTORS.md`)
 - [x] **1. Explicit Plugin Catalogue & Runtime-Owned Registries**: Remove global decorator mutation side-effects on module import; runtime directly registers explicit `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS`.
 - [x] **2. Deterministic Extractor Resolution & Conflict Semantics**: Introduce explicit registration priority on extractors and raise `DuplicateSourceError` on collisions. In a plugin architecture, implicit resolution order is a correctness issue.

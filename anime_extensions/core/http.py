@@ -13,7 +13,8 @@ Design goals:
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager
 from typing import Any
 
 import aiohttp
@@ -110,6 +111,32 @@ class HttpClient:
             raise RuntimeError("HttpClient has not been started — call start() first")
         return session
 
+    @asynccontextmanager
+    async def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[aiohttp.ClientResponse]:
+        """Issue a request with shared headers and SDK error translation."""
+        session = self._require_session()
+        merged = dict(_DEFAULT_HEADERS)
+        if headers:
+            merged.update(headers)
+
+        request = session.get if method == "GET" else session.post
+        try:
+            async with request(url, headers=merged, **kwargs) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise _translate_status(response.status, url, method)
+                yield response
+        except aiohttp.ServerTimeoutError as exc:
+            raise TimeoutError(f"{method} {url} timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise HttpError(f"{method} {url} failed: {exc}") from exc
+
     # ------------------------------------------------------------------
     # High-level helpers
     # ------------------------------------------------------------------
@@ -123,20 +150,8 @@ class HttpClient:
         ssl: bool | Any = None,
     ) -> str:
         """GET *url* and return the body text.  Raises ``HttpError`` on failure."""
-        session = self._require_session()
-        merged = dict(_DEFAULT_HEADERS)
-        if headers:
-            merged.update(headers)
-
-        try:
-            async with session.get(url, headers=merged, params=params, ssl=ssl) as resp:
-                if resp.status < 200 or resp.status >= 300:
-                    raise _translate_status(resp.status, url, "GET")
-                return await resp.text(errors="replace")
-        except aiohttp.ServerTimeoutError as exc:
-            raise TimeoutError(f"GET {url} timed out") from exc
-        except aiohttp.ClientError as exc:
-            raise HttpError(f"GET {url} failed: {exc}") from exc
+        async with self._request("GET", url, headers=headers, params=params, ssl=ssl) as response:
+            return await response.text(errors="replace")
 
     async def get_json(
         self,
@@ -147,23 +162,11 @@ class HttpClient:
         ssl: bool | Any = None,
     ) -> Any:
         """GET *url* and decode the JSON body."""
-        session = self._require_session()
-        merged = dict(_DEFAULT_HEADERS)
-        if headers:
-            merged.update(headers)
-
-        try:
-            async with session.get(url, headers=merged, params=params, ssl=ssl) as resp:
-                if resp.status < 200 or resp.status >= 300:
-                    raise _translate_status(resp.status, url, "GET")
-                try:
-                    return await resp.json(content_type=None)
-                except (aiohttp.ContentTypeError, ValueError) as exc:
-                    raise ParsingError(f"Failed to decode JSON from {url}") from exc
-        except aiohttp.ServerTimeoutError as exc:
-            raise TimeoutError(f"GET {url} timed out") from exc
-        except aiohttp.ClientError as exc:
-            raise HttpError(f"GET {url} failed: {exc}") from exc
+        async with self._request("GET", url, headers=headers, params=params, ssl=ssl) as response:
+            try:
+                return await response.json(content_type=None)
+            except (aiohttp.ContentTypeError, ValueError) as exc:
+                raise ParsingError(f"Failed to decode JSON from {url}") from exc
 
     async def post_json(
         self,
@@ -175,25 +178,18 @@ class HttpClient:
         ssl: bool | Any = None,
     ) -> Any:
         """POST JSON to *url* and decode the JSON response."""
-        session = self._require_session()
-        merged = dict(_DEFAULT_HEADERS)
-        if headers:
-            merged.update(headers)
-
-        try:
-            async with session.post(
-                url, json=json_data, headers=merged, params=params, ssl=ssl
-            ) as resp:
-                if resp.status < 200 or resp.status >= 300:
-                    raise _translate_status(resp.status, url, "POST")
-                try:
-                    return await resp.json(content_type=None)
-                except (aiohttp.ContentTypeError, ValueError) as exc:
-                    raise ParsingError(f"Failed to decode JSON from {url}") from exc
-        except aiohttp.ServerTimeoutError as exc:
-            raise TimeoutError(f"POST {url} timed out") from exc
-        except aiohttp.ClientError as exc:
-            raise HttpError(f"POST {url} failed: {exc}") from exc
+        async with self._request(
+            "POST",
+            url,
+            headers=headers,
+            params=params,
+            json=json_data,
+            ssl=ssl,
+        ) as response:
+            try:
+                return await response.json(content_type=None)
+            except (aiohttp.ContentTypeError, ValueError) as exc:
+                raise ParsingError(f"Failed to decode JSON from {url}") from exc
 
     async def get_bytes(
         self,
@@ -204,20 +200,8 @@ class HttpClient:
         ssl: bool | Any = None,
     ) -> bytes:
         """GET *url* and return the raw bytes."""
-        session = self._require_session()
-        merged = dict(_DEFAULT_HEADERS)
-        if headers:
-            merged.update(headers)
-
-        try:
-            async with session.get(url, headers=merged, params=params, ssl=ssl) as resp:
-                if resp.status < 200 or resp.status >= 300:
-                    raise _translate_status(resp.status, url, "GET")
-                return await resp.read()
-        except aiohttp.ServerTimeoutError as exc:
-            raise TimeoutError(f"GET {url} timed out") from exc
-        except aiohttp.ClientError as exc:
-            raise HttpError(f"GET {url} failed: {exc}") from exc
+        async with self._request("GET", url, headers=headers, params=params, ssl=ssl) as response:
+            return await response.read()
 
     # Context manager support
     async def __aenter__(self) -> HttpClient:

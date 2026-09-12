@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypeVar
 
 from .errors import DuplicateSourceError, ExtractorError
@@ -59,11 +60,11 @@ class SourceRegistry:
 E = TypeVar("E", bound=type["Extractor"])
 
 
+@dataclass(frozen=True, slots=True)
 class ExtractorRegistration:
-    def __init__(self, cls: type[Extractor], pattern: re.Pattern[str], priority: int = 0) -> None:
-        self.cls = cls
-        self.pattern = pattern
-        self.priority = priority
+    cls: type[Extractor]
+    pattern: re.Pattern[str]
+    priority: int = 0
 
 
 class ExtractorRegistry:
@@ -78,6 +79,9 @@ class ExtractorRegistry:
         """Register an extractor class to handle URLs matching *pattern*."""
         compiled = re.compile(pattern, re.IGNORECASE) if isinstance(pattern, str) else pattern
         self._extractors.append(ExtractorRegistration(cls, compiled, priority))
+        # Keep the list sorted by priority (descending) so that resolve() can be linear.
+        # The sort is stable, so equal-priority items retain registration order.
+        self._extractors.sort(key=lambda r: r.priority, reverse=True)
         log.debug(
             "Registered extractor %r for pattern %r (priority %d)",
             cls.__name__,
@@ -98,12 +102,10 @@ class ExtractorRegistry:
         Raises:
             ExtractorError if no extractor matches *url*.
         """
-        sorted_extractors = sorted(self._extractors, key=lambda r: r.priority, reverse=True)
-        matches = [reg.cls for reg in sorted_extractors if reg.pattern.search(url)]
-        if not matches:
-            raise ExtractorError(f"No extractor found for URL: {url}")
-
-        return matches[0]
+        for reg in self._extractors:
+            if reg.pattern.search(url):
+                return reg.cls
+        raise ExtractorError(f"No extractor found for URL: {url}")
 
     def __len__(self) -> int:
         return len(self._extractors)

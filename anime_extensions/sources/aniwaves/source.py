@@ -282,7 +282,8 @@ class AniWaves(Source):
         if not embed_url:
             return []
 
-        extractor = self.context.extractors.resolve(embed_url)
+        extractor_cls = self.context.extractors.resolve(embed_url)
+        extractor = extractor_cls(self.context)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Doodstream":
             kwargs["quality_prefix"] = kwargs.pop("label_prefix")

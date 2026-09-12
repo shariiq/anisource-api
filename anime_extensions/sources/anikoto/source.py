@@ -439,7 +439,8 @@ class Anikoto(Source):
             return await self._extract_direct_m3u8(embed_url, server_id)
 
         try:
-            extractor = self.context.extractors.resolve(embed_url)
+            extractor_cls = self.context.extractors.resolve(embed_url)
+            extractor = extractor_cls(self.context)
         except ExtractorError:
             return await self._extract_from_player(embed_url, server_id, ep_url)
 

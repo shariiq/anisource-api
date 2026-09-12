@@ -167,7 +167,8 @@ class AnimeNoSub(Source):
 
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
         embed_url = await self._resolve_embed_url(server_id)
-        extractor = self.context.extractors.resolve(embed_url)
+        extractor_cls = self.context.extractors.resolve(embed_url)
+        extractor = extractor_cls(self.context)
         kwargs: dict[str, Any] = {"label_prefix": ""}
         if extractor.name == "Moon":
             kwargs["site_url"] = self.base_url

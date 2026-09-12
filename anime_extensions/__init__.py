@@ -3,6 +3,7 @@
 from .core import (
     Anime,
     Episode,
+    ExtensionContext,
     ExtensionRuntime,
     Extractor,
     ExtractorRegistry,
@@ -40,6 +41,7 @@ __all__ = [
     "Subtitle",
     # Runtime
     "ExtensionRuntime",
+    "ExtensionContext",
     "SourceContext",
     # Registry
     "ExtractorRegistry",

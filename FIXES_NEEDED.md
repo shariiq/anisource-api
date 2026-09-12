@@ -57,9 +57,9 @@ SUMMARY
 ---
 
 ### 5. MKissa ⏸️ QUARANTINED (Stream Timeout / Error Swallowing)
-- **Status**: Quarantined (Toggle in `registry.py`)
+- **Status**: Quarantined (Disabled in `anime_extensions/sources/__init__.py`)
 - **Root Cause**: Upstream MKissa API enforces strict anti-bot and rate-limiting measures on automated requests (returning `NEED_CAPTCHA` via APQ). We updated it to raise typed domain exceptions (`ParsingError`), but because the core site requires CAPTCHA bypassing or heavily distributed IP rotation for consistent access, it fails reliability thresholds.
-- **Resolution**: Quarantined `mkissa` from the central `SourceRegistry` via `_QUARANTINED_SOURCES = {"mkissa"}`. This prevents SDK discovery, API endpoint exposure, and CI matrix execution while preserving the implementation code intact for future re-enablement if anti-bot protections soften or we integrate CAPTCHA resolution.
+- **Resolution**: Quarantined `mkissa` from the built-in source catalogue via `BuiltinSource(MKissa, enabled=False)`. This prevents SDK discovery, API endpoint exposure, and CI matrix execution while preserving the implementation code intact for future re-enablement if anti-bot protections soften or we integrate CAPTCHA resolution.
 
 ---
 
@@ -80,7 +80,7 @@ SUMMARY
 - **AniWaves BYFMS**: ✅ Fixed (native PoW solver deployed)
 - **AniWaves DGHG**: ⚠️ Requires upstream investigation (payload schema unrecognized; error now surfaces as `ParsingError` instead of silent `[]`)
 - **AnimeNoSub**: ⚠️ Datacenter WAF block (works locally, blocked on Render/datacenter egress)
-- **MKissa**: ⏸️ Quarantined (upstream anti-bot limits; unquarantine via `_QUARANTINED_SOURCES` in `registry.py`)
+- **MKissa**: ⏸️ Quarantined (upstream anti-bot limits; unquarantine via `BuiltinSource(MKissa, enabled=True)` in `anime_extensions/sources/__init__.py`)
 
 ### 📋 Remaining Refinements
 

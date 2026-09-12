@@ -15,7 +15,7 @@ from .metadata import SourceCapability, SourceMetadata
 from .models import Anime, Episode, Page, Server, Stream
 
 if TYPE_CHECKING:
-    from .runtime import SourceContext
+    from .runtime import ExtensionContext
 
 
 class Source(ABC):
@@ -25,14 +25,14 @@ class Source(ABC):
     identity and capabilities.  The runtime reads this to build the
     public source registry without constructing an instance.
 
-    All methods receive their ``SourceContext`` (and through it the
+    All methods receive their ``ExtensionContext`` (and through it the
     ``HttpClient`` / ``ExtractorRegistry``) at ``__init__`` time, never
     as per-call arguments.
     """
 
     metadata: SourceMetadata
 
-    def __init__(self, context: SourceContext) -> None:
+    def __init__(self, context: ExtensionContext) -> None:
         """Initialize the source with its execution context."""
         self.context = context
 

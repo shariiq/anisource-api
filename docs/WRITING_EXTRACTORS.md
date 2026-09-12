@@ -305,19 +305,9 @@ if not video_url:
     return []
 ```
 
-### 5. Use Configuration for Constants
+### 5. Keep Constants Local to the Extractor
 
-Import from `core.config` instead of hardcoding:
-
-```python
-from ..core.config import DEFAULT_EXTRACTOR_CONFIG
-
-USER_AGENT = DEFAULT_EXTRACTOR_CONFIG.user_agent
-TIMEOUT = DEFAULT_EXTRACTOR_CONFIG.timeout
-```
-
-**Note**: The `core.config` module is a new addition (introduced alongside this documentation). If it hasn't been merged yet, you can reference the existing extractor files for their current constant patterns. All new extractors should use the config module.
-```
+Define extractor-specific headers and protocol constants alongside the implementation. Runtime-owned HTTP lifecycle and request translation are provided by `self.context.http`; there is no shared extractor configuration module.
 
 ## Example: Minimal Extractor
 
@@ -329,7 +319,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.config import DEFAULT_EXTRACTOR_CONFIG
 from ..core.extractor import Extractor
 from ..exceptions import ParsingError
 from ..models import Stream
@@ -349,19 +338,20 @@ class SimpleHostExtractor(Extractor):
             return []
 
         label_prefix = kwargs.get("label_prefix", "")
-        
+
         # Fetch the embed page
-        async with session.get(url, headers={"User-Agent": DEFAULT_EXTRACTOR_CONFIG.user_agent}) as resp:
+        async with session.get(url, headers={"User-Agent": USER_AGENT}) as resp:
             if resp.status != 200:
                 raise ParsingError(f"SimpleHost: returned HTTP {resp.status}")
             html = await resp.text(errors="replace")
 
         # Extract video URL from HTML
         import re
+
         match = re.search(r'data-src="(https://[^"]+\.mp4)"', html)
         if not match:
             raise ParsingError("SimpleHost: no video URL found in embed page")
-        
+
         video_url = match.group(1)
         quality = f"{label_prefix} - 1080p" if label_prefix else "1080p"
 
@@ -369,7 +359,7 @@ class SimpleHostExtractor(Extractor):
             Stream(
                 url=video_url,
                 quality=quality,
-                headers={"Referer": url, "User-Agent": DEFAULT_EXTRACTOR_CONFIG.user_agent},
+                headers={"Referer": url, "User-Agent": USER_AGENT},
                 is_hls=False,
             )
         ]
@@ -401,7 +391,7 @@ class SimpleHostExtractor(Extractor):
 
 - ❌ Creating your own `aiohttp.ClientSession()`
 - ❌ Returning `[]` for malformed 200 OK responses (should raise `ParsingError`)
-- ❌ Hardcoding timeout values (use `core.config`)
+- ❌ Hardcoding timeout values (use the runtime-owned `HttpClient` defaults or inject a timeout explicitly)
 - ❌ Forgetting to set `Referer` header (many hosters require it)
 - ❌ Ignoring subtitle tracks in the payload
 - ❌ Not handling both `{"file": "..."}` and `{"url": "..."}` keys

@@ -14,6 +14,7 @@ from anime_extensions.core import (
     SourceMetadata,
     SourceRegistry,
     UpstreamNotFound,
+    UpstreamUnavailable,
 )
 from anime_extensions.models import Anime, Page
 
@@ -134,30 +135,59 @@ async def test_http_error_translation():
     await client.close()
 
 
-def test_source_registry_quarantine():
-    from anime_extensions.core.registry import _QUARANTINED_SOURCES, SourceRegistry
-
+def test_source_registry_is_generic():
+    """Verify source registration does not apply source-specific policies."""
     registry = SourceRegistry()
     registry.register(MockSource)
 
     assert registry.get("mock-source") is MockSource
     assert MockSource in registry.list_all()
 
-    try:
-        _QUARANTINED_SOURCES.add("mock-source")
-        assert registry.get("mock-source") is None
-        assert MockSource not in registry.list_all()
-    finally:
-        _QUARANTINED_SOURCES.remove("mock-source")
+
+def test_builtin_source_catalogue_marks_mkissa_disabled():
+    """Verify built-in source availability policy belongs to the catalogue."""
+    from anime_extensions.sources import BUILTIN_SOURCES
+
+    builtins = {item.cls.metadata.id: item for item in BUILTIN_SOURCES}
+
+    assert builtins["mkissa"].enabled is False
+    assert all(item.enabled for id_, item in builtins.items() if id_ != "mkissa")
+
+
+def test_runtime_skips_disabled_builtin_sources():
+    """Verify disabled source catalogue entries are not registered."""
+    runtime = ExtensionRuntime()
+
+    assert runtime.sources.get("mkissa") is None
+    assert {source.metadata.id for source in runtime.sources.list_all()} == {
+        "aniwaves",
+        "anikoto",
+        "animenosub",
+    }
+    assert len(runtime.extractors) == 12
+
+
+def test_runtime_accepts_runtime_source_exclusions():
+    """Verify callers can exclude enabled built-ins at runtime."""
+    runtime = ExtensionRuntime(disabled_sources={"aniwaves", "anikoto"})
+
+    assert runtime.sources.get("aniwaves") is None
+    assert runtime.sources.get("anikoto") is None
+    assert runtime.sources.get("animenosub") is not None
 
 
 @pytest.mark.asyncio
-async def test_runtime_builtin_catalog_cardinality():
-    """Verify ExtensionRuntime loads expected number of built-in sources and extractors."""
-    runtime = ExtensionRuntime()
-    # Wait for built-in registration to complete (if any async work needed)
-    # The _register_builtins is called in __init__ via _load_builtins which is sync.
-    assert (
-        len(runtime.sources) == 4
-    )  # aniwaves, anikoto, animenosub, mkissa (quarantined not counted)
-    assert len(runtime.extractors) == 12  # known extractor count
+async def test_http_error_translation_for_upstream_unavailability():
+    """Verify gateway status codes translate to UpstreamUnavailable."""
+    client = HttpClient()
+    await client.start()
+    mock_resp = AsyncMock()
+    mock_resp.status = 503
+    mock_resp.__aenter__.return_value = mock_resp
+    client.session.get = MagicMock(return_value=mock_resp)
+
+    with pytest.raises(UpstreamUnavailable) as exc_info:
+        await client.get("https://mock.source/unavailable")
+
+    assert exc_info.value.status_code == 503
+    await client.close()

@@ -19,7 +19,7 @@ from ...utils.mkissa_crypto import MKissaCrypto
 from .key_manager import MKissaKeyManager
 
 if TYPE_CHECKING:
-    from ...core.runtime import SourceContext
+    from ...core.runtime import ExtensionContext
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ class MKissa(Source):
     base_url = metadata.base_url
     api_url = "https://api.mkissa.net"
 
-    def __init__(self, context: SourceContext) -> None:
+    def __init__(self, context: ExtensionContext) -> None:
         super().__init__(context)
         self.key_manager = MKissaKeyManager(
             http_client=context.http,

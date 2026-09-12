@@ -23,10 +23,6 @@ log = logging.getLogger(__name__)
 # Sources
 # ----------------------------------------------------------------------
 
-# Quarantined sources are hidden from registry lookups and discovery by default.
-# To unquarantine a source, simply remove its ID from _QUARANTINED_SOURCES.
-_QUARANTINED_SOURCES: set[str] = {"mkissa"}
-
 
 class SourceRegistry:
     """A registry of available anime source plugins."""
@@ -47,12 +43,10 @@ class SourceRegistry:
         log.debug("Registered source %r", id_)
 
     def get(self, id_: str) -> type[Source] | None:
-        if id_ in _QUARANTINED_SOURCES:
-            return None
         return self._sources.get(id_)
 
     def list_all(self) -> list[type[Source]]:
-        return [cls for id_, cls in self._sources.items() if id_ not in _QUARANTINED_SOURCES]
+        return list(self._sources.values())
 
     def __len__(self) -> int:
         return len(self._sources)

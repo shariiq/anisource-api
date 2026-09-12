@@ -79,12 +79,13 @@ async def test_stream_resolution_preserves_direct_url_and_priority() -> None:
 async def test_external_source_uses_registered_extractor() -> None:
     """External hoster URLs are resolved to direct streams through the registry."""
     context = MagicMock()
-    extractor = MagicMock()
-    extractor.name = "Example"
-    extractor.extract = AsyncMock(
+    extractor_instance = MagicMock()
+    extractor_instance.name = "Example"
+    extractor_instance.extract = AsyncMock(
         return_value=[Stream(url="https://cdn.example/video.mp4", quality="Example - 1080p")]
     )
-    context.extractors.resolve.return_value = extractor
+    extractor_cls = MagicMock(return_value=extractor_instance)
+    context.extractors.resolve.return_value = extractor_cls
     source = MKissa(context=context)
 
     streams = await source._streams_from_sources(
@@ -98,7 +99,8 @@ async def test_external_source_uses_registered_extractor() -> None:
     )
 
     context.extractors.resolve.assert_called_once_with("https://embed.example/e/abc")
-    extractor.extract.assert_awaited_once()
+    extractor_cls.assert_called_once_with(context)
+    extractor_instance.extract.assert_awaited_once()
     assert [stream.url for stream in streams] == ["https://cdn.example/video.mp4"]
 
 

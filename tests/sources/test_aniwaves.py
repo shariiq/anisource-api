@@ -133,12 +133,14 @@ async def test_get_servers_normalizes_names_and_types(source: AniWaves):
 async def test_get_streams_routes_by_host(source: AniWaves, embed_url: str, extractor_name: str):
     """Test host-based routing delegates to the runtime extractor registry."""
     source._get_embed_url = AsyncMock(return_value=embed_url)
-    extractor = MagicMock(name=extractor_name)
-    extractor.name = extractor_name
-    extractor.extract = AsyncMock(return_value=[])
-    source.context.extractors.resolve.return_value = extractor
+    extractor_instance = MagicMock(name=extractor_name)
+    extractor_instance.name = extractor_name
+    extractor_instance.extract = AsyncMock(return_value=[])
+    extractor_cls = MagicMock(return_value=extractor_instance)
+    source.context.extractors.resolve.return_value = extractor_cls
 
     await source.get_streams("id-one&epurl=/watch/naruto/ep-1", "server-1")
 
     source.context.extractors.resolve.assert_called_once_with(embed_url)
-    extractor.extract.assert_awaited_once()
+    extractor_cls.assert_called_once_with(source.context)
+    extractor_instance.extract.assert_awaited_once()

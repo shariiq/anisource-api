@@ -64,9 +64,11 @@ async def test_servers_and_stream_delegation(source: AnimeNoSub):
     )
     servers = await source.get_servers("https://animenosub.to/episode/show-1")
     assert servers[0].name == "VidMoly"
-    extractor = MagicMock(name="extractor")
-    extractor.name = "VidMoly"
-    extractor.extract = AsyncMock(return_value=[])
-    source.context.extractors.resolve.return_value = extractor
+    extractor_instance = MagicMock(name="extractor")
+    extractor_instance.name = "VidMoly"
+    extractor_instance.extract = AsyncMock(return_value=[])
+    extractor_cls = MagicMock(return_value=extractor_instance)
+    source.context.extractors.resolve.return_value = extractor_cls
     assert await source.get_streams("unused", servers[0].id) == []
     source.context.extractors.resolve.assert_called_once_with("https://vidmoly.biz/embed-a")
+    extractor_cls.assert_called_once_with(source.context)

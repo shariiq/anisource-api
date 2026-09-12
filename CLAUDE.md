@@ -68,17 +68,16 @@ The SDK must not depend on FastAPI.
 
 - `anime_extensions/sources/`
   - scraper plugins
-  - currently includes AniWaves, Anikoto, and MKissa
+  - built-in catalogue includes AniWaves, Anikoto, AnimeNoSub, and disabled MKissa
 
 - `anime_extensions/extractors/`
   - video extractors
-  - currently includes Byse, DoodStream, and EchoVideo
+  - built-in catalogue includes Byse, Dood, and EchoVideo
 
 - `anime_extensions_api/`
   - FastAPI layer
   - `routers/`
   - `services/`
-    - `SourceManager`
     - `AsyncTTLCache`
   - `schemas.py`
   - `app.py`
@@ -105,15 +104,14 @@ The SDK must not depend on FastAPI.
      - `ParsingError`
      - `TimeoutError`
 
-2. **Dependency injection is performed through `SourceContext`.**
+2. **Dependency injection is performed through `ExtensionContext`.**
 
    Every source and extractor receives a frozen context containing:
 
    - `http`
    - `extractors`
-   - `runtime`
 
-   Do not introduce global state.
+   `SourceContext` remains a backward-compatible alias. Do not introduce global state.
 
 3. **Discovery is registry-based.**
 
@@ -172,12 +170,12 @@ The SDK must not depend on FastAPI.
 
    Concurrent misses for the same key must be coalesced into a single upstream operation.
 
-7. **`SourceManager` and cache live in `app.state`.**
+7. **`ExtensionRuntime` and cache live in `app.state`.**
 
    Access them through dependency injection:
 
-   - `Depends(get_source_manager)`
-   - `Depends(get_cache)`
+   - `RuntimeDep` (aliases `Depends(get_runtime)`)
+   - `CacheDep` (aliases `Depends(get_cache)`)
 
    Do not introduce globals.
 
@@ -209,7 +207,7 @@ Every source implements the following contract:
 - `aniwaves`
 - `anikoto`
 - `animenosub`
-- `mkissa` (quarantined: toggle in `anime_extensions/core/registry.py`)
+- `mkissa` (quarantined: toggle in `anime_extensions/sources/__init__.py`)
 
 ---
 
@@ -222,7 +220,7 @@ Porting and repair work is strictly **evidence-driven**. Do not guess behavior f
 1. **Trace the Kotlin implementation graph first**: Read the source class and every dependency (request helpers, headers, cookies, crypto/VRF utilities, extractor mappings) in `anime-extensions` before writing code.
 2. **Isolate the exact failing boundary**: Identify whether a failure is in catalog parsing, details, episodes, server discovery, embed URL normalization, extractor resolution, hoster decryption, or playlist parsing. Never alter a source to compensate for an extractor defect, or vice versa.
 3. **Adhere to SDK contracts**:
-   - Inherit from `BaseSource(context)` or `BaseExtractor(context)`.
+   - Inherit from `Source(context)` or `Extractor(context)`.
    - Route all requests through `self.context.http`; never create standalone sessions.
    - Return typed domain models (`Anime`, `Episode`, `Server`, `Stream`, `Subtitle`); never return raw dicts.
    - Add the source to `BUILTIN_SOURCES` or the `(ExtractorClass, pattern, priority)` entry to `BUILTIN_EXTRACTORS` in the corresponding `__init__.py` catalogue.

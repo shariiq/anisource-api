@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from .models import Stream
 
 if TYPE_CHECKING:
-    from .runtime import SourceContext
+    from .runtime import ExtensionContext
 
 
 class Extractor(ABC):
@@ -22,7 +22,7 @@ class Extractor(ABC):
 
     name: str
 
-    def __init__(self, context: SourceContext) -> None:
+    def __init__(self, context: ExtensionContext) -> None:
         """Initialize the extractor with its execution context."""
         self.context = context
 

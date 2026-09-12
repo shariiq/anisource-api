@@ -18,7 +18,7 @@ from ...models import Anime, Episode, Page, Server, Stream, Subtitle
 from ...utils.crypto import vrf_encrypt
 
 if TYPE_CHECKING:
-    from ...core.runtime import SourceContext
+    from ...core.runtime import ExtensionContext
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class Anikoto(Source):
     id = metadata.id
     base_url = metadata.base_url
 
-    def __init__(self, context: SourceContext, *, domain: str | None = None) -> None:
+    def __init__(self, context: ExtensionContext, *, domain: str | None = None) -> None:
         """Bind the source to an explicit runtime context."""
         super().__init__(context)
         if domain:

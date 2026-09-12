@@ -5,7 +5,7 @@ Design goals:
 * **Secure by default** — TLS verification is on unless the caller explicitly
   opts out per-request.  The old global ``ssl=False`` is gone.
 * **Single lifecycle** — one ``HttpClient`` per runtime; sources and
-  extractors receive it through ``SourceContext``, never build their own.
+  extractors receive it through ``ExtensionContext``, never build their own.
 * **Error translation** — networking / HTTP failures are mapped to the
   core error taxonomy so callers never import ``aiohttp`` for control flow.
 """
@@ -18,7 +18,14 @@ from typing import Any
 
 import aiohttp
 
-from .errors import HttpError, ParsingError, TimeoutError, UpstreamNotFound, UpstreamRateLimited
+from .errors import (
+    HttpError,
+    ParsingError,
+    TimeoutError,
+    UpstreamNotFound,
+    UpstreamRateLimited,
+    UpstreamUnavailable,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +48,8 @@ def _translate_status(status: int, url: str, method: str) -> HttpError:
         return UpstreamNotFound(base)
     if status == 429:
         return UpstreamRateLimited(base)
+    if status in {502, 503, 504}:
+        return UpstreamUnavailable(base, status_code=status)
     return HttpError(base, status_code=status)
 
 

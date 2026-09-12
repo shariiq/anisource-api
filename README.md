@@ -10,7 +10,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Layered SDK architecture**: Framework contracts and infrastructure live in `anime_extensions.core`; source and extractor plugins build on those contracts without depending on the API.
 - **Centralized asynchronous HTTP**: `HttpClient` owns connection pooling, timeouts, proxy configuration, secure TLS defaults, and translation of upstream failures into typed exceptions.
 - **Explicit runtime lifecycle**: `ExtensionRuntime` is the composition root for the HTTP client and extension registries. It supports `async with` for deterministic startup and shutdown.
-- **Dependency injection**: Every source and extractor receives a `SourceContext` rather than creating sessions or reaching into global application state.
+- **Dependency injection**: Every source and extractor receives an `ExtensionContext` (aliased as `SourceContext` for backward compatibility) rather than creating sessions or reaching into global application state.
 - **Catalogue-driven discovery**: `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS` register plugins without global state or module-level side-effects.
 - **Typed domain models**: Sources return consistent anime, episode, server, stream, and subtitle models.
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
@@ -82,7 +82,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Built-in sources and extractors are discovered when the runtime starts. A source receives the runtime-managed `HttpClient` and extractor registry through its `SourceContext`.
+Built-in sources and extractors are discovered when the runtime is constructed from the explicit `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS` catalogues. A source receives the runtime-managed `HttpClient` and extractor registry through its `ExtensionContext` (`SourceContext` remains a compatibility alias). Use `ExtensionRuntime(disabled_sources={...})` to exclude enabled built-in sources for a specific runtime; catalogue entries may also be disabled with `BuiltinSource(..., enabled=False)`.
 
 ## Running the API
 
@@ -188,16 +188,14 @@ The project tracks planned architectural improvements in [docs/ROADMAP.md](docs/
 
 ## Verification
 
-Run all four checks before committing:
+Run the required repository-wide static checks before committing:
 
 ```bash
-uv run ruff check anime_extensions anime_extensions_api tests
-uv run ruff format --check anime_extensions anime_extensions_api tests
-uv run pytest
-uv run pytest tests/live/ --run-live
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-Live tests make real requests to third-party services and can fail when an upstream site is unavailable or changes behavior. Unit tests remain network-isolated.
+Run only the deterministic tests relevant to the changed area while developing. The repository's pre-push gate runs linting, formatting, bytecode compilation, and the complete unit-test suite. Targeted live tests may be run explicitly with `--run-live`; they make real requests to third-party services and can fail when an upstream site is unavailable or changes behavior. GitHub Actions is authoritative for the full test and live-test matrix. Unit tests remain network-isolated.
 
 ## License
 

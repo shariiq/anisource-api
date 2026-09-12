@@ -7,7 +7,7 @@ This module provides the foundation for building anime source plugins:
 * **Metadata**: ``SourceMetadata`` and ``SourceCapability``
 * **HTTP**: ``HttpClient`` with secure defaults
 * **Registry**: runtime-owned ``SourceRegistry`` and ``ExtractorRegistry`` populated from built-in catalogues
-* **Runtime**: ``ExtensionRuntime`` and ``SourceContext``
+* **Runtime**: ``ExtensionRuntime`` and ``ExtensionContext``
 * **Errors**: Fine-grained exception hierarchy
 
 Example:
@@ -39,7 +39,7 @@ from .http import HttpClient
 from .metadata import SourceCapability, SourceMetadata
 from .models import Anime, AnimeStatus, Episode, Server, Stream, Subtitle
 from .registry import ExtractorRegistry, SourceRegistry
-from .runtime import ExtensionRuntime, SourceContext
+from .runtime import ExtensionContext, ExtensionRuntime, SourceContext
 from .source import Source
 
 __all__ = [
@@ -63,6 +63,7 @@ __all__ = [
     "ExtractorRegistry",
     # Runtime
     "ExtensionRuntime",
+    "ExtensionContext",
     "SourceContext",
     # Errors
     "AnimeExtensionError",

@@ -2,7 +2,7 @@
 
 ``ExtensionRuntime`` is the composition root. It owns the ``HttpClient``
 and the registries, and provides the dependency-injection mechanism
-(``SourceContext``) for instantiation of sources and extractors.
+(``ExtensionContext``) for instantiation of sources and extractors.
 """
 
 from __future__ import annotations
@@ -22,11 +22,15 @@ log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class SourceContext:
+class ExtensionContext:
     """The dependency container injected into concrete sources and extractors."""
 
     http: HttpClient
     extractors: ExtractorRegistry
+
+
+# Backwards-compatible alias for clients using the pre-rename contract.
+SourceContext = ExtensionContext
 
 
 class ExtensionRuntime:
@@ -39,6 +43,7 @@ class ExtensionRuntime:
         source_registry: SourceRegistry | None = None,
         extractor_registry: ExtractorRegistry | None = None,
         load_builtins: bool = True,
+        disabled_sources: set[str] | None = None,
     ) -> None:
         """Initialize the runtime.
 
@@ -48,6 +53,7 @@ class ExtensionRuntime:
         self.http = http_client or HttpClient()
         self.sources = source_registry or SourceRegistry()
         self.extractors = extractor_registry or ExtractorRegistry()
+        self._disabled_sources = disabled_sources or set()
 
         if load_builtins:
             self._register_builtins()
@@ -59,8 +65,12 @@ class ExtensionRuntime:
         from anime_extensions.sources import BUILTIN_SOURCES
 
         # Register sources
-        for source_cls in BUILTIN_SOURCES:
-            self.sources.register(source_cls)
+        for item in BUILTIN_SOURCES:
+            if not item.enabled:
+                continue
+            if item.cls.metadata.id in self._disabled_sources:
+                continue
+            self.sources.register(item.cls)
 
         # Register extractors with their patterns and priorities
         for extractor_cls, pattern, priority in BUILTIN_EXTRACTORS:
@@ -89,9 +99,9 @@ class ExtensionRuntime:
         await self.close()
 
     @property
-    def context(self) -> SourceContext:
+    def context(self) -> ExtensionContext:
         """Build the injection context for sources/extractors."""
-        return SourceContext(
+        return ExtensionContext(
             http=self.http,
             extractors=self.extractors,
         )

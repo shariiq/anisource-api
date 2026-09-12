@@ -107,7 +107,7 @@ class Anikoto(Source):
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse anime listing page."""
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         animes = []
 
         for item in soup.select("div.ani.items > div.item"):
@@ -162,7 +162,7 @@ class Anikoto(Source):
 
         url = f"{self.base_url}{anime_path}"
         html = await self._request(url)
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
 
         # Title - prefer Japanese title from data-jp attribute
         title_elem = soup.select_one("h1.title, h2.title")
@@ -299,7 +299,7 @@ class Anikoto(Source):
         if not html_result:
             return []
 
-        soup = BeautifulSoup(html_result, "html.parser")
+        soup = BeautifulSoup(html_result, "lxml")
         episodes = []
 
         for a in soup.select("div.episodes ul > li > a"):
@@ -387,7 +387,7 @@ class Anikoto(Source):
         if not html_result:
             return []
 
-        soup = BeautifulSoup(html_result, "html.parser")
+        soup = BeautifulSoup(html_result, "lxml")
         servers = []
 
         for type_div in soup.select("div.servers > div.type"):

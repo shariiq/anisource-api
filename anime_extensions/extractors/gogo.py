@@ -82,7 +82,7 @@ class GogoStreamExtractor(Extractor):
                     raise ExtractorError(f"GogoStream: failed to fetch page, status {resp.status}")
                 text = await resp.text(errors="replace")
 
-            soup = BeautifulSoup(text, "html.parser")
+            soup = BeautifulSoup(text, "lxml")
 
             wrapper = soup.find("div", class_=lambda c: c and "container-" in c) or soup.find(
                 "div", class_="wrapper"

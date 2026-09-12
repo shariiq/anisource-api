@@ -48,7 +48,7 @@ class VidMolyExtractor(Extractor):
             log.warning("VidMoly request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        doc = BeautifulSoup(html, "lxml")
         script_text = ""
         for s in doc.find_all("script"):
             if s.string and "sources" in s.string:

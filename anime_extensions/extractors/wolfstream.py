@@ -37,7 +37,7 @@ class WolfStreamExtractor(Extractor):
             log.warning("WolfStream request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        doc = BeautifulSoup(html, "lxml")
         script_text = ""
 
         # Find script containing sources

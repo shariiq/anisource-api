@@ -59,7 +59,7 @@ class AnimeNoSub(Source):
         return Page(items=items, page=page, has_next=has_next)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         items: list[Anime] = []
         for anchor in soup.select("div.listupd article a.tip"):
             href = anchor.get("href", "")
@@ -82,7 +82,7 @@ class AnimeNoSub(Source):
     async def get_details(self, anime_id: str) -> Anime:
         path = self._anime_path(anime_id)
         url = urljoin(self.base_url, path)
-        soup = BeautifulSoup(await self.context.http.get(url), "html.parser")
+        soup = BeautifulSoup(await self.context.http.get(url), "lxml")
         title_el = soup.select_one("h1.entry-title")
         info = soup.select_one("div.info-content, div.right ul.data")
         if title_el is None or info is None:
@@ -120,9 +120,7 @@ class AnimeNoSub(Source):
 
     async def get_episodes(self, anime_id: str) -> list[Episode]:
         path = self._anime_path(anime_id)
-        soup = BeautifulSoup(
-            await self.context.http.get(urljoin(self.base_url, path)), "html.parser"
-        )
+        soup = BeautifulSoup(await self.context.http.get(urljoin(self.base_url, path)), "lxml")
         episodes: list[Episode] = []
         for anchor in soup.select("div.eplister > ul > li > a"):
             number_el = anchor.select_one(".epl-num")
@@ -153,7 +151,7 @@ class AnimeNoSub(Source):
         return episodes
 
     async def get_servers(self, episode_id: str) -> list[Server]:
-        soup = BeautifulSoup(await self.context.http.get(episode_id), "html.parser")
+        soup = BeautifulSoup(await self.context.http.get(episode_id), "lxml")
         servers: list[Server] = []
         for index, element in enumerate(
             soup.select("select.mirror > option[data-index], ul.mirror a[data-em]")
@@ -186,7 +184,7 @@ class AnimeNoSub(Source):
                 html = base64.b64decode(encoded).decode("utf-8")
             except (ValueError, UnicodeDecodeError) as exc:
                 raise ParsingError("AnimeNoSub returned an invalid encoded server") from exc
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         frame = soup.select_one("iframe[src]")
         if frame and frame.get("src"):
             return urljoin(self.base_url, frame.get("src", ""))

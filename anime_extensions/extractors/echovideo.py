@@ -6,8 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import aiohttp
+
+from ..core.errors import ParsingError
 from ..core.extractor import Extractor
-from ..exceptions import ParsingError
 from ..models import Stream, Subtitle
 from ..utils.m3u8 import parse_m3u8_streams
 
@@ -63,18 +65,25 @@ class EchoVideoExtractor(Extractor):
             "User-Agent": USER_AGENT,
         }
 
-        async with session.get(sources_url, headers=headers) as resp:
-            if resp.status != 200:
-                # Fall back to getSourcesNew if the endpoint returns nothing or error
-                sources_url = f"{base_embed}/getSourcesNew?id={video_id}"
-                async with session.get(sources_url, headers=headers) as resp2:
-                    if resp2.status != 200:
-                        raise ParsingError(
-                            f"EchoVideo: both getSources and getSourcesNew returned {resp.status}/{resp2.status}"
-                        )
-                    data = await resp2.json(content_type=None)
-            else:
-                data = await resp.json(content_type=None)
+        async def _fetch_json(url: str) -> dict[str, Any] | None:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    return None
+                try:
+                    return await resp.json(content_type=None)
+                except aiohttp.ContentTypeError, ValueError:
+                    # Not JSON (e.g., HTML error page)
+                    return None
+
+        data = await _fetch_json(sources_url)
+        if data is None:
+            # Fall back to getSourcesNew
+            sources_url = f"{base_embed}/getSourcesNew?id={video_id}"
+            data = await _fetch_json(sources_url)
+            if data is None:
+                raise ParsingError(
+                    "EchoVideo: both getSources and getSourcesNew returned non-JSON or error"
+                )
 
         if not isinstance(data, dict):
             raise ParsingError(f"EchoVideo: expected dict response, got {type(data).__name__}")

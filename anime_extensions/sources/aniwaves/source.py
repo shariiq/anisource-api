@@ -119,7 +119,7 @@ class AniWaves(Source):
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse an anime listing page."""
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(html, "lxml")
         animes: list[Anime] = []
         for item in soup.select("div.ani.items > div.item"):
             name_a = item.select_one("a.name, a.d-title")
@@ -141,7 +141,7 @@ class AniWaves(Source):
         """Get full anime details."""
         clean_id = anime_id.split("#")[0].strip("/")
         anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
-        soup = BeautifulSoup(await self._request(f"{self.base_url}{anime_path}"), "html.parser")
+        soup = BeautifulSoup(await self._request(f"{self.base_url}{anime_path}"), "lxml")
         title_elem = soup.select_one("h1.title, h2.title")
         title = (
             title_elem.get("data-jp", "").strip() or title_elem.get_text(strip=True)
@@ -217,7 +217,7 @@ class AniWaves(Source):
         if not isinstance(data, dict) or not (html_result := data.get("result", "")):
             return []
         episodes: list[Episode] = []
-        for anchor in BeautifulSoup(html_result, "html.parser").select("div.episodes ul li a"):
+        for anchor in BeautifulSoup(html_result, "lxml").select("div.episodes ul li a"):
             ep_num, ep_ids = anchor.get("data-num", ""), anchor.get("data-ids", "")
             if not ep_num and not ep_ids:
                 continue
@@ -259,7 +259,7 @@ class AniWaves(Source):
         if not isinstance(data, dict) or not (html_result := data.get("result", "")):
             return []
         servers: list[Server] = []
-        for type_div in BeautifulSoup(html_result, "html.parser").select(
+        for type_div in BeautifulSoup(html_result, "lxml").select(
             "div.servers div.type[data-type]"
         ):
             video_type = self._resolve_video_type(type_div.get("data-type", "").lower())

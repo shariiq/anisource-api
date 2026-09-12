@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -47,6 +50,8 @@ class PipelineReport:
     servers_resolved: int = 0
     streams_resolved: int = 0
     elapsed_seconds: float = 0.0
+    stage_seconds: dict[str, float] = field(default_factory=dict)
+    stream_results: list[StreamResult] = field(default_factory=list)
     _started_at: float = field(default=0.0, init=False, repr=False)
 
     def record(self, message: str) -> None:
@@ -187,6 +192,7 @@ async def resolve_servers(
 def record_stream_results(report: PipelineReport, results: Sequence[StreamResult]) -> None:
     """Fold concurrently collected server results into one pipeline report."""
     report.servers_tested = len(results)
+    report.stream_results.extend(results)
     for result in results:
         if result.error:
             report.fail(f"server {result.server_name!r}: {result.error}")
@@ -206,13 +212,54 @@ def report_summary(reports: Sequence[PipelineReport]) -> None:
         return
 
     for report in reports:
+        stages_str = ", ".join(
+            f"{stage}: {sec:.1f}s" for stage, sec in report.stage_seconds.items()
+        )
+        if stages_str:
+            stages_str = f" ({stages_str})"
         print(
             f"{report.status:<4} {report.environment:<8} {report.source_id:<14} "
             f"servers {report.servers_resolved}/{report.servers_tested}, "
-            f"streams {report.streams_resolved}, {report.elapsed_seconds:.1f}s"
+            f"streams {report.streams_resolved}, {report.elapsed_seconds:.1f}s{stages_str}"
         )
     passed = sum(report.status is Status.PASS for report in reports)
     print(f"{passed}/{len(reports)} source pipelines passed")
+
+    # Persist benchmarks to disk
+    benchmark_dir = Path(".benchmarks")
+    benchmark_dir.mkdir(exist_ok=True)
+    benchmark_file = benchmark_dir / "last_run.json"
+
+    timestamp = datetime.now(UTC).isoformat()
+    data = {
+        "timestamp": timestamp,
+        "pipelines": [
+            {
+                "environment": r.environment,
+                "source_id": r.source_id,
+                "status": str(r.status),
+                "elapsed_seconds": round(r.elapsed_seconds, 3),
+                "servers_resolved": r.servers_resolved,
+                "servers_tested": r.servers_tested,
+                "streams_resolved": r.streams_resolved,
+                "stage_seconds": {k: round(v, 3) for k, v in r.stage_seconds.items()},
+                "server_results": [
+                    {
+                        "server_name": sr.server_name,
+                        "stream_count": sr.stream_count,
+                        "error": sr.error,
+                        "warnings": list(sr.warnings),
+                    }
+                    for sr in r.stream_results
+                ],
+                "errors": r.errors,
+                "warnings": r.warnings,
+            }
+            for r in reports
+        ],
+    }
+    benchmark_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(f"\nSaved benchmark results to {benchmark_file}")
 
 
 async def test_local(query: str, source_filter: set[str] | None) -> list[PipelineReport]:
@@ -237,32 +284,43 @@ async def test_local(query: str, source_filter: set[str] | None) -> list[Pipelin
                 continue
 
             try:
+                t0 = time.perf_counter()
                 page = await source.search(query=query)
+                report.stage_seconds["search"] = time.perf_counter() - t0
                 if not page.items:
                     report.fail("search returned no results")
                     continue
                 anime = page.items[0]
                 report.record(f"search: {anime.title!r} ({anime.id})")
 
+                t0 = time.perf_counter()
                 details = await source.get_details(anime.id)
+                report.stage_seconds["details"] = time.perf_counter() - t0
                 report.record(f"details: {details.title!r}")
 
+                t0 = time.perf_counter()
                 episodes = await source.get_episodes(anime.id)
+                report.stage_seconds["episodes"] = time.perf_counter() - t0
                 if not episodes:
                     report.fail("no episodes found")
                     continue
                 episode = episodes[0]
                 report.record(f"episodes: {len(episodes)}; testing episode {episode.id!r}")
 
+                t0 = time.perf_counter()
                 servers = await source.get_servers(episode.id)
+                report.stage_seconds["servers"] = time.perf_counter() - t0
                 if not servers:
                     report.fail("no servers found")
                     continue
                 report.record(f"servers: {len(servers)}")
+
+                t0 = time.perf_counter()
                 results = await resolve_servers(
                     [(server.id, server.name) for server in servers],
                     lambda server_id, src=source, ep=episode: src.get_streams(ep.id, server_id),
                 )
+                report.stage_seconds["streams"] = time.perf_counter() - t0
                 record_stream_results(report, results)
             except Exception as exc:  # Report an individual upstream/source failure and continue.
                 report.fail(f"pipeline error: {type(exc).__name__}: {exc}")
@@ -321,10 +379,12 @@ async def test_deployed(
             report.start()
             reports.append(report)
             try:
+                t0 = time.perf_counter()
                 search = await response_json(
                     await client.get(f"{api_url}/{source_id}/search", params={"q": query}),
                     f"{source_id} search",
                 )
+                report.stage_seconds["search"] = time.perf_counter() - t0
                 if not isinstance(search, Mapping) or not search.get("items"):
                     report.fail("search returned no results")
                     continue
@@ -332,29 +392,35 @@ async def test_deployed(
                 anime_id = str(anime["id"])
                 report.record(f"search: {anime.get('title', '<untitled>')!r} ({anime_id})")
 
+                t0 = time.perf_counter()
                 details = await response_json(
                     await client.get(f"{api_url}/{source_id}/anime/{anime_id}"),
                     f"{source_id} details",
                 )
+                report.stage_seconds["details"] = time.perf_counter() - t0
                 if not isinstance(details, Mapping):
                     report.fail("details response is not an object")
                     continue
                 report.record(f"details: {details.get('title', '<untitled>')!r}")
 
+                t0 = time.perf_counter()
                 episodes = await response_json(
                     await client.get(f"{api_url}/{source_id}/episodes/{anime_id}"),
                     f"{source_id} episodes",
                 )
+                report.stage_seconds["episodes"] = time.perf_counter() - t0
                 if not isinstance(episodes, list) or not episodes:
                     report.fail("no episodes found")
                     continue
                 episode_id = str(episodes[0]["id"])
                 report.record(f"episodes: {len(episodes)}; testing episode {episode_id!r}")
 
+                t0 = time.perf_counter()
                 servers = await response_json(
                     await client.get(f"{api_url}/{source_id}/servers/{episode_id}"),
                     f"{source_id} servers",
                 )
+                report.stage_seconds["servers"] = time.perf_counter() - t0
                 if not isinstance(servers, list) or not servers:
                     report.fail("no servers found")
                     continue
@@ -374,10 +440,12 @@ async def test_deployed(
                         raise RuntimeError("stream response is not an array")
                     return streams
 
+                t0 = time.perf_counter()
                 results = await resolve_servers(
                     [(str(server["id"]), str(server["name"])) for server in servers],
                     get_streams,
                 )
+                report.stage_seconds["streams"] = time.perf_counter() - t0
                 record_stream_results(report, results)
             except (httpx.HTTPError, RuntimeError, KeyError, TypeError) as exc:
                 report.fail(f"pipeline error: {type(exc).__name__}: {exc}")

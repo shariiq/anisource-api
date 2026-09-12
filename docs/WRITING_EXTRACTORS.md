@@ -156,7 +156,7 @@ async with session.get(url, headers=headers) as resp:
 ```python
 from bs4 import BeautifulSoup
 
-soup = BeautifulSoup(html, "html.parser")
+soup = BeautifulSoup(html, "lxml")
 
 # Extract data from elements
 title = soup.title.get_text() if soup.title else ""

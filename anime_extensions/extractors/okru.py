@@ -39,7 +39,7 @@ class OkruExtractor(Extractor):
         # Ok.ru's certificate chain is incomplete on some supported runtimes.
         # Keep the exception host-scoped rather than weakening the shared client.
         text = await self.context.http.get(url, ssl=False)
-        soup = BeautifulSoup(text, "html.parser")
+        soup = BeautifulSoup(text, "lxml")
         options_div = soup.find("div", {"data-options": True})
         if options_div is None:
             raise ParsingError("Okru response did not contain video options")

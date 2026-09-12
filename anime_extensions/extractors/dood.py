@@ -54,7 +54,7 @@ class DoodExtractor(Extractor):
             dood_host = f"{parsed.scheme}://{parsed.netloc}"
 
             # 2. Extract quality from page title
-            soup = BeautifulSoup(text, "html.parser")
+            soup = BeautifulSoup(text, "lxml")
             title_text = soup.title.get_text() if soup.title else ""
             quality_match = re.search(r"(\d{3,4}p)", title_text)
             extracted_quality = quality_match.group(1) if quality_match else "1080p"

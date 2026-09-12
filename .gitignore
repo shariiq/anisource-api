@@ -69,3 +69,6 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+
+# Benchmark Reports
+.benchmarks/

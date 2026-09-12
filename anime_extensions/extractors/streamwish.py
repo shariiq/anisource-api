@@ -66,7 +66,7 @@ class StreamWishExtractor(Extractor):
         }
 
         text = await self.context.http.get(url, headers=headers)
-        soup = BeautifulSoup(text, "html.parser")
+        soup = BeautifulSoup(text, "lxml")
 
         # Check for gateway loading page with external main.js
         # This indicates StreamWish's new architecture where video data

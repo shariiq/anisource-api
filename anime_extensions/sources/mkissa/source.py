@@ -708,9 +708,7 @@ class MKissa(Source):
         raw_description = show.get("description")
         description = ""
         if isinstance(raw_description, str):
-            description = BeautifulSoup(
-                raw_description.replace("<br>", "\n"), "html.parser"
-            ).get_text()
+            description = BeautifulSoup(raw_description.replace("<br>", "\n"), "lxml").get_text()
         season = show.get("season") or "-"
         if isinstance(season, Mapping):
             season = (

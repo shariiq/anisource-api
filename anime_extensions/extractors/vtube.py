@@ -47,7 +47,7 @@ class VtubeExtractor(Extractor):
             log.warning("Vtube request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        doc = BeautifulSoup(html, "lxml")
         unpacked: str | None = None
 
         for script in doc.find_all("script"):

@@ -11,7 +11,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Centralized asynchronous HTTP**: `HttpClient` owns connection pooling, timeouts, proxy configuration, secure TLS defaults, and translation of upstream failures into typed exceptions.
 - **Explicit runtime lifecycle**: `ExtensionRuntime` is the composition root for the HTTP client and extension registries. It supports `async with` for deterministic startup and shutdown.
 - **Dependency injection**: Every source and extractor receives a `SourceContext` rather than creating sessions or reaching into global application state.
-- **Catalogue-driven discovery**: Built-in sources and extractors are explicitly registered from catalogues (`BUILTIN_SOURCES`, `BUILTIN_EXTRACTORS`) during runtime initialization.
+- **Catalogue-driven discovery**: `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS` register plugins without global state or module-level side-effects.
 - **Typed domain models**: Sources return consistent anime, episode, server, stream, and subtitle models.
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
 - **Stampede-resistant caching**: `AsyncTTLCache.get_or_set` coalesces concurrent cache misses for the same key into one upstream request.
@@ -164,15 +164,16 @@ IDs are opaque source-owned values and may contain path separators. Clients shou
    - `get_streams(episode_id, server_id)`
 3. Unimplemented capabilities will automatically raise `UnsupportedCapabilityError`.
 4. Use `self.context.http` for all network access.
-5. Add the class to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`.
+5. Append the class to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`.
 6. Add unit tests and `tests/live/test_live_<source>.py` coverage.
 
 ### Extractor
 
 1. Inherit from `Extractor` in `anime_extensions/core/extractor.py`.
 2. Use `self.context.http` for network access.
-3. Add the extractor, its regex pattern, and priority to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`.
-4. Add deterministic unit tests for parsing and URL resolution.
+3. Define the host URL pattern and priority in the `BUILTIN_EXTRACTORS` entry.
+4. Append the `(ExtractorClass, pattern, priority)` entry to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`.
+5. Add deterministic unit tests for parsing and URL resolution.
 
 See [the scraper maintenance guide](docs/MAINTENANCE.md) for porting and repair guidance.
 

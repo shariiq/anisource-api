@@ -149,3 +149,15 @@ def test_source_registry_quarantine():
         assert MockSource not in registry.list_all()
     finally:
         _QUARANTINED_SOURCES.remove("mock-source")
+
+
+@pytest.mark.asyncio
+async def test_runtime_builtin_catalog_cardinality():
+    """Verify ExtensionRuntime loads expected number of built-in sources and extractors."""
+    runtime = ExtensionRuntime()
+    # Wait for built-in registration to complete (if any async work needed)
+    # The _register_builtins is called in __init__ via _load_builtins which is sync.
+    assert (
+        len(runtime.sources) == 4
+    )  # aniwaves, anikoto, animenosub, mkissa (quarantined not counted)
+    assert len(runtime.extractors) == 12  # known extractor count

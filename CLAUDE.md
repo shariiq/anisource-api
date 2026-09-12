@@ -20,7 +20,6 @@ Operate at principal-engineer quality.
   - or `git -C anime-extensions-py <cmd>`
 
 - **Repository:** `https://github.com/shariiq/anisource-api.git`
-
 - **Branch:** `main`
 
 - **Deployed API:** `https://anisource-api.onrender.com/`
@@ -118,14 +117,12 @@ The SDK must not depend on FastAPI.
 
 3. **Discovery is registry-based.**
 
-   Use:
-
-   - `@register_source`
-   - `@register_extractor(r"pattern")`
+   Append source classes to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`.
+   Append `(ExtractorClass, pattern, priority)` entries to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`.
 
    Registrations are exported from `__init__.py`.
 
-   `ExtensionRuntime._load_builtins()` performs automatic discovery.
+   `ExtensionRuntime._register_builtins()` imports these catalogues and registers entries into runtime-scoped registries.
 
    Do not introduce manual registration.
 
@@ -228,7 +225,7 @@ Porting and repair work is strictly **evidence-driven**. Do not guess behavior f
    - Inherit from `BaseSource(context)` or `BaseExtractor(context)`.
    - Route all requests through `self.context.http`; never create standalone sessions.
    - Return typed domain models (`Anime`, `Episode`, `Server`, `Stream`, `Subtitle`); never return raw dicts.
-   - Register via `@register_source` or `@register_extractor(r"pattern")` and export from `__init__.py`.
+   - Add the source to `BUILTIN_SOURCES` or the `(ExtractorClass, pattern, priority)` entry to `BUILTIN_EXTRACTORS` in the corresponding `__init__.py` catalogue.
    - Raise `ParsingError` for malformed 200 responses; let core HTTP errors propagate naturally. Avoid catch-all exception swallowing.
 4. **Enforce performance budgets**: CPU-bound operations (proof-of-work, mixing loops) must resolve comfortably within proxy/gateway timeouts (< 2–3 seconds). Do not raise internal timeout constants as a workaround for slow code.
 5. **Prove behavior deterministically**:

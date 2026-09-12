@@ -9,7 +9,7 @@ This guide covers source and extractor repairs in the current `anime-extensions-
 | Core contracts | `anime_extensions/core/source.py`, `extractor.py` | Source and extractor interfaces |
 | Domain models | `anime_extensions/core/models.py`, `metadata.py` | Anime, episode, server, stream, subtitle, and source metadata types |
 | Networking | `anime_extensions/core/http.py` | Shared session lifecycle, pooling, timeouts, TLS, and HTTP error translation |
-| Registration | `anime_extensions/core/registry.py` | Source and URL-pattern extractor registries and decorators |
+| Registration | `anime_extensions/core/registry.py` | Source and URL-pattern extractor registries |
 | Composition | `anime_extensions/core/runtime.py` | `ExtensionRuntime` and `SourceContext` dependency injection |
 | Sources | `anime_extensions/sources/` | Site-specific catalog and server implementations |
 | Extractors | `anime_extensions/extractors/` | Hoster-specific stream extraction |
@@ -165,8 +165,8 @@ This matrix is the authoritative definition of "correct behavior." It prevents c
 
 **For extractor registration, routing, and stream extraction:**
 
-1. **Prove extractor selection** through `ExtensionRuntime.resolve_extractor(url)` or direct registry resolution API with a representative normalized embed URL. A server label, raw regex pattern match, or `@register_extractor` decorator alone is not sufficient proof—verify that the runtime registry resolves the exact normalized embed URL to the expected extractor class.
-2. Inspect the matching Kotlin extractor implementation and relevant host domain aliases before changing `@register_extractor` patterns or hoster extraction logic.
+1. **Prove extractor selection** through `ExtensionRuntime.resolve_extractor(url)` or direct registry resolution API with a representative normalized embed URL. A server label or raw regex pattern match alone is not sufficient proof—verify that the runtime registry resolves the exact normalized embed URL to the expected extractor class.
+2. Inspect the matching Kotlin extractor implementation and relevant host domain aliases before changing `BUILTIN_EXTRACTORS` patterns or hoster extraction logic.
 3. Keep registration patterns narrowly evidenced: add a host alias only when Kotlin includes it or live production evidence shows that host serves the same payload format; broad patterns (`.*video.*`, `\w+play`) silently route incompatible hosters to the wrong extractor.
 4. Preserve required stream headers (`Referer`, `Origin`, custom auth tokens) exactly as Kotlin specifies.
 5. Normalize relative HLS playlist URLs to absolute URLs where required by the player; validate that every returned stream URL begins with `http://` or `https://`.
@@ -221,7 +221,7 @@ SDK exceptions are mapped centrally in `anime_extensions_api/app.py` exception h
 4. **Extractor registry resolution tests**:
    - construct `ExtensionRuntime` with `load_builtins=True` (or manually register extractors for isolated tests);
    - assert `runtime.resolve_extractor("https://normalized.embed.url/path")` returns the expected extractor class;
-   - do **not** test only the raw regex pattern or decorator—runtime resolution is the contract.
+   - do **not** test only the raw regex pattern or catalogue entry—runtime resolution is the contract.
 
 5. **Extractor parsing tests** with fixed playlist/JSON fixtures:
    - save a representative hoster response (m3u8 playlist, JSON sources payload, encrypted blob) as a fixture;
@@ -270,9 +270,9 @@ Live tests validate that:
 
 ## Registering Built-ins
 
-Decorate a source with `@register_source` and an extractor with `@register_extractor(r"pattern")`. Export the module from the corresponding package `__init__.py`.
+Add a source class to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`. Add an extractor entry `(ExtractorClass, pattern, priority)` to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`, using a narrowly scoped URL pattern and an explicit priority.
 
-`ExtensionRuntime._load_builtins()` imports `anime_extensions.sources` and `anime_extensions.extractors`, which triggers decorator registration. Do not manually register sources in `SourceManager` or add concrete imports outside `__init__.py`.
+`ExtensionRuntime._register_builtins()` imports these catalogues and registers their entries into its runtime-scoped registries. Do not manually register sources in `SourceManager` or add concrete imports outside the corresponding catalogue module.
 
 For isolated registry tests, construct `ExtensionRuntime` with custom registries and `load_builtins=False`.
 

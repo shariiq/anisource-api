@@ -10,6 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from .errors import UnsupportedCapabilityError
 from .metadata import SourceCapability, SourceMetadata
 from .models import Anime, Episode, Page, Server, Stream
 
@@ -43,15 +44,19 @@ class Source(ABC):
     # Listing
     # ------------------------------------------------------------------
 
-    @abstractmethod
     async def get_popular(self, page: int = 1) -> Page[Anime]:
-        """Return a Page of anime for popular/trending."""
-        raise NotImplementedError
+        """Return a Page of anime for popular/trending.
 
-    @abstractmethod
+        Raises UnsupportedCapabilityError if the source does not declare POPULAR.
+        """
+        raise UnsupportedCapabilityError(self.metadata.id, "POPULAR")
+
     async def get_latest(self, page: int = 1) -> Page[Anime]:
-        """Return a Page of anime for latest updates."""
-        raise NotImplementedError
+        """Return a Page of anime for latest updates.
+
+        Raises UnsupportedCapabilityError if the source does not declare LATEST.
+        """
+        raise UnsupportedCapabilityError(self.metadata.id, "LATEST")
 
     @abstractmethod
     async def search(self, query: str, page: int = 1) -> Page[Anime]:

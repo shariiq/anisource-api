@@ -145,12 +145,6 @@ class LimitedMockSource(Source):
         capabilities={SourceCapability.SEARCH},
     )
 
-    async def get_popular(self, page: int = 1) -> Page[Anime]:
-        return Page(items=[], page=page, has_next=False)
-
-    async def get_latest(self, page: int = 1) -> Page[Anime]:
-        return Page(items=[], page=page, has_next=False)
-
     async def search(self, query: str, page: int = 1) -> Page[Anime]:
         return Page(items=[], page=page, has_next=False)
 

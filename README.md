@@ -11,7 +11,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Centralized asynchronous HTTP**: `HttpClient` owns connection pooling, timeouts, proxy configuration, secure TLS defaults, and translation of upstream failures into typed exceptions.
 - **Explicit runtime lifecycle**: `ExtensionRuntime` is the composition root for the HTTP client and extension registries. It supports `async with` for deterministic startup and shutdown.
 - **Dependency injection**: Every source and extractor receives a `SourceContext` rather than creating sessions or reaching into global application state.
-- **Decorator-based discovery**: `@register_source` and `@register_extractor(pattern)` register plugins without hard-coding their classes into the API service.
+- **Catalogue-driven discovery**: Built-in sources and extractors are explicitly registered from catalogues (`BUILTIN_SOURCES`, `BUILTIN_EXTRACTORS`) during runtime initialization.
 - **Typed domain models**: Sources return consistent anime, episode, server, stream, and subtitle models.
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
 - **Stampede-resistant caching**: `AsyncTTLCache.get_or_set` coalesces concurrent cache misses for the same key into one upstream request.
@@ -23,12 +23,12 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 ```text
 anime_extensions/
 ├── core/                  # Contracts, models, HTTP, registries, runtime
-├── sources/               # Source plugins
-└── extractors/            # Video extractor plugins
+├── sources/               # Source plugins (built-in catalogue)
+└── extractors/            # Video extractor plugins (built-in catalogue)
 
 anime_extensions_api/
 ├── routers/               # HTTP route definitions
-├── services/              # Source manager and cache
+├── services/              # Cache service
 ├── dependencies.py        # FastAPI dependency aliases
 ├── schemas.py             # Public response schemas
 └── app.py                 # Application factory and lifecycle
@@ -75,8 +75,8 @@ async def main() -> None:
         if source is None:
             raise RuntimeError("Source is not registered")
 
-        results, has_next = await source.search(query="One Piece", page=1)
-        print(results, has_next)
+        page = await source.search(query="One Piece", page=1)
+        print(page.items, page.has_next)
 
 
 asyncio.run(main())
@@ -154,24 +154,25 @@ IDs are opaque source-owned values and may contain path separators. Clients shou
 ### Source
 
 1. Inherit from `Source` in `anime_extensions/core/source.py`.
-2. Define source metadata and implement the required asynchronous pipeline:
+2. Define source metadata (declaring its capabilities like `SourceCapability.SEARCH`) and implement the supported asynchronous methods:
+   - `get_popular(page)`
+   - `get_latest(page)`
    - `search(query, page)`
    - `get_details(anime_id)`
    - `get_episodes(anime_id)`
    - `get_servers(episode_id)`
    - `get_streams(episode_id, server_id)`
-3. Use `self.context.http` for all network access.
-4. Decorate the class with `@register_source`.
-5. Export the module from `anime_extensions/sources/__init__.py` so built-in discovery imports it.
+3. Unimplemented capabilities will automatically raise `UnsupportedCapabilityError`.
+4. Use `self.context.http` for all network access.
+5. Add the class to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`.
 6. Add unit tests and `tests/live/test_live_<source>.py` coverage.
 
 ### Extractor
 
 1. Inherit from `Extractor` in `anime_extensions/core/extractor.py`.
 2. Use `self.context.http` for network access.
-3. Decorate the class with `@register_extractor(r"...")`, using a narrowly scoped URL pattern.
-4. Export the module from `anime_extensions/extractors/__init__.py`.
-5. Add deterministic unit tests for parsing and URL resolution.
+3. Add the extractor, its regex pattern, and priority to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`.
+4. Add deterministic unit tests for parsing and URL resolution.
 
 See [the scraper maintenance guide](docs/MAINTENANCE.md) for porting and repair guidance.
 

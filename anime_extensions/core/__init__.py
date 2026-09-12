@@ -6,7 +6,7 @@ This module provides the foundation for building anime source plugins:
 * **Models**: ``Anime``, ``Episode``, ``Server``, ``Stream``, ``Subtitle``
 * **Metadata**: ``SourceMetadata`` and ``SourceCapability``
 * **HTTP**: ``HttpClient`` with secure defaults
-* **Registry**: ``@register_source`` and ``@register_extractor`` decorators
+* **Registry**: runtime-owned source and extractor registries populated from built-in catalogues
 * **Runtime**: ``ExtensionRuntime`` and ``SourceContext``
 * **Errors**: Fine-grained exception hierarchy
 
@@ -14,7 +14,8 @@ Example:
     >>> from anime_extensions.core import ExtensionRuntime
     >>> async with ExtensionRuntime() as runtime:
     ...     source = runtime.get_source("aniwaves")
-    ...     popular, has_next = await source.get_popular(page=1)
+    ...     page = await source.get_popular(page=1)
+    ...     popular, has_next = page.items, page.has_next
 """
 
 from __future__ import annotations

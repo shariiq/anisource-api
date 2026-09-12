@@ -1,7 +1,8 @@
-"""Module registration system for sources and extractors.
+"""Registry system for sources and extractors.
 
-Extensions declare themselves using the decorators here. This explicit
-registration gives deterministic startup over fragile dynamic imports.
+The runtime owns `SourceRegistry` and `ExtractorRegistry` instances. Sources and
+extractors are registered explicitly via catalogue-driven discovery in
+`ExtensionRuntime._load_builtins()`, giving deterministic startup and dependency flow.
 """
 
 from __future__ import annotations
@@ -93,8 +94,11 @@ class ExtractorRegistry:
     def resolve(self, url: str) -> type[Extractor]:
         """Find the exact Extractor class that handles *url*.
 
+        Returns the highest-priority matching extractor. If multiple extractors
+        share the highest priority, returns the first match by catalogue order.
+
         Raises:
-            ExtractorError if no extractor matches, or multiple match.
+            ExtractorError if no extractor matches.
         """
         # Sort by priority (descending) so higher priority extractors match first
         sorted_extractors = sorted(self._extractors, key=lambda r: r.priority, reverse=True)
@@ -107,6 +111,3 @@ class ExtractorRegistry:
 
     def __len__(self) -> int:
         return len(self._extractors)
-
-
-_EXTRACTOR_REGISTRY = ExtractorRegistry()

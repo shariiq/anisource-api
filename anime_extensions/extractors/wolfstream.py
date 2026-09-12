@@ -10,13 +10,11 @@ from bs4 import BeautifulSoup
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream
 
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"wolfstream")
 class WolfStreamExtractor(Extractor):
     """Extractor for WolfStream."""
 

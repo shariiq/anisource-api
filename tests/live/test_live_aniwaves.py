@@ -12,7 +12,7 @@ async def aniwaves_source():
     from anime_extensions.core import ExtensionRuntime
 
     async with ExtensionRuntime() as runtime:
-        runtime.sources.register(AniWaves)
+        # Sources are already registered via _register_builtins() during start()
         yield runtime.get_source("aniwaves")
 
 
@@ -20,7 +20,9 @@ async def aniwaves_source():
 @pytest.mark.asyncio
 async def test_get_popular(aniwaves_source: AniWaves) -> None:
     """Test fetching popular anime from AniWaves."""
-    animes, has_next = await aniwaves_source.get_popular(page=1)
+    page_data = await aniwaves_source.get_popular(page=1)
+    animes = page_data.items
+    has_next = page_data.has_next
 
     assert isinstance(has_next, bool)
     assert len(animes) > 0, "Expected at least one popular anime"
@@ -36,7 +38,8 @@ async def test_get_popular(aniwaves_source: AniWaves) -> None:
 @pytest.mark.asyncio
 async def test_search(aniwaves_source: AniWaves) -> None:
     """Test searching for anime on AniWaves."""
-    results, _ = await aniwaves_source.search("Naruto", page=1)
+    page_data = await aniwaves_source.search("Naruto", page=1)
+    results = page_data.items
 
     assert len(results) > 0, "Expected search results for 'Naruto'"
     assert "naruto" in results[0].title.lower(), "Search result should contain query"
@@ -47,7 +50,8 @@ async def test_search(aniwaves_source: AniWaves) -> None:
 async def test_full_extraction_flow(aniwaves_source: AniWaves) -> None:
     """End-to-end test verifying details, episodes, servers, and streams."""
     # 1. Search for a stable anime
-    results, _ = await aniwaves_source.search("Naruto", page=1)
+    page_data = await aniwaves_source.search("Naruto", page=1)
+    results = page_data.items
     assert results, "Search failed, aborting flow"
     anime = results[0]
 

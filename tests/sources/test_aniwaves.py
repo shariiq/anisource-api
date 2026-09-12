@@ -136,9 +136,9 @@ async def test_get_streams_routes_by_host(source: AniWaves, embed_url: str, extr
     extractor = MagicMock(name=extractor_name)
     extractor.name = extractor_name
     extractor.extract = AsyncMock(return_value=[])
-    source.context.runtime.resolve_extractor.return_value = extractor
+    source.context.extractors.resolve.return_value = extractor
 
     await source.get_streams("id-one&epurl=/watch/naruto/ep-1", "server-1")
 
-    source.context.runtime.resolve_extractor.assert_called_once_with(embed_url)
+    source.context.extractors.resolve.assert_called_once_with(embed_url)
     extractor.extract.assert_awaited_once()

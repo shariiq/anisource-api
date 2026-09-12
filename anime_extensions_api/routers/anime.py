@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Query
 
+from anime_extensions.core.errors import SourceNotFoundError, UnsupportedCapabilityError
+from anime_extensions.core.metadata import SourceCapability
+from anime_extensions.core.models import Anime, Episode, Page
+
 from ..config import get_settings
-from ..dependencies import CacheDep, ManagerDep
+from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import (
     AnimeSchema,
     EpisodeSchema,
     PaginatedResponse,
 )
+from ._cache import fetch_cached
 
 log = logging.getLogger(__name__)
 
@@ -32,31 +36,35 @@ async def get_popular(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.POPULAR):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.POPULAR)
+
     settings = get_settings()
 
-    async def fetch() -> dict[str, Any]:
-        animes, has_next = await source.get_popular(page=page)
-        items = [AnimeSchema.model_validate(anime) for anime in animes]
-        return {
-            "items": [item.model_dump() for item in items],
-            "page": page,
-            "has_next": has_next,
-            "total_returned": len(items),
-        }
+    async def _fetch() -> Page[Anime]:
+        return await source.get_popular(page=page)
 
     cache_key = f"{source.metadata.id}:popular:{page}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.popular_ttl_seconds
-        )
-        return PaginatedResponse[AnimeSchema](**data)
+    page_data: Page[Anime] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.popular_ttl_seconds,
+    )
 
-    data = await fetch()
-    return PaginatedResponse[AnimeSchema](**data)
+    return PaginatedResponse[AnimeSchema](
+        items=[AnimeSchema.model_validate(item) for item in page_data.items],
+        page=page_data.page,
+        has_next=page_data.has_next,
+        total_returned=page_data.total_returned or len(page_data.items),
+    )
 
 
 @router.get(
@@ -71,31 +79,35 @@ async def get_latest(
     source_id: str,
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.LATEST):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.LATEST)
+
     settings = get_settings()
 
-    async def fetch() -> dict[str, Any]:
-        animes, has_next = await source.get_latest(page=page)
-        items = [AnimeSchema.model_validate(anime) for anime in animes]
-        return {
-            "items": [item.model_dump() for item in items],
-            "page": page,
-            "has_next": has_next,
-            "total_returned": len(items),
-        }
+    async def _fetch() -> Page[Anime]:
+        return await source.get_latest(page=page)
 
     cache_key = f"{source.metadata.id}:latest:{page}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.latest_ttl_seconds
-        )
-        return PaginatedResponse[AnimeSchema](**data)
+    page_data: Page[Anime] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.latest_ttl_seconds,
+    )
 
-    data = await fetch()
-    return PaginatedResponse[AnimeSchema](**data)
+    return PaginatedResponse[AnimeSchema](
+        items=[AnimeSchema.model_validate(item) for item in page_data.items],
+        page=page_data.page,
+        has_next=page_data.has_next,
+        total_returned=page_data.total_returned or len(page_data.items),
+    )
 
 
 @router.get(
@@ -111,31 +123,35 @@ async def search_anime(
     q: str = Query(..., min_length=1, description="Search query string."),
     page: int = Query(1, ge=1, description="Page number to fetch."),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> PaginatedResponse[AnimeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.SEARCH):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.SEARCH)
+
     settings = get_settings()
 
-    async def fetch() -> dict[str, Any]:
-        animes, has_next = await source.search(query=q, page=page)
-        items = [AnimeSchema.model_validate(anime) for anime in animes]
-        return {
-            "items": [item.model_dump() for item in items],
-            "page": page,
-            "has_next": has_next,
-            "total_returned": len(items),
-        }
+    async def _fetch() -> Page[Anime]:
+        return await source.search(query=q, page=page)
 
     cache_key = f"{source.metadata.id}:search:{q}:{page}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.search_ttl_seconds
-        )
-        return PaginatedResponse[AnimeSchema](**data)
+    page_data: Page[Anime] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.search_ttl_seconds,
+    )
 
-    data = await fetch()
-    return PaginatedResponse[AnimeSchema](**data)
+    return PaginatedResponse[AnimeSchema](
+        items=[AnimeSchema.model_validate(item) for item in page_data.items],
+        page=page_data.page,
+        has_next=page_data.has_next,
+        total_returned=page_data.total_returned or len(page_data.items),
+    )
 
 
 @router.get(
@@ -150,26 +166,30 @@ async def get_anime_details(
     source_id: str,
     anime_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> AnimeSchema:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.DETAILS):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.DETAILS)
+
     settings = get_settings()
 
-    async def fetch() -> dict[str, Any]:
-        anime = await source.get_details(anime_id=anime_id)
-        item = AnimeSchema.model_validate(anime)
-        return item.model_dump()
+    async def _fetch() -> Anime:
+        return await source.get_details(anime_id=anime_id)
 
     cache_key = f"{source.metadata.id}:details:{anime_id}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.details_ttl_seconds
-        )
-        return AnimeSchema.model_validate(data)
+    anime: Anime = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.details_ttl_seconds,
+    )
 
-    data = await fetch()
-    return AnimeSchema.model_validate(data)
+    return AnimeSchema.model_validate(anime)
 
 
 @router.get(
@@ -184,23 +204,27 @@ async def get_episodes(
     source_id: str,
     anime_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[EpisodeSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.EPISODES):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.EPISODES)
+
     settings = get_settings()
 
-    async def fetch() -> list[dict[str, Any]]:
-        episodes = await source.get_episodes(anime_id=anime_id)
-        items = [EpisodeSchema.model_validate(ep) for ep in episodes]
-        return [item.model_dump() for item in items]
+    async def _fetch() -> list[Episode]:
+        return await source.get_episodes(anime_id=anime_id)
 
     cache_key = f"{source.metadata.id}:episodes:{anime_id}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.episodes_ttl_seconds
-        )
-        return [EpisodeSchema.model_validate(ep) for ep in data]
+    episodes: list[Episode] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.episodes_ttl_seconds,
+    )
 
-    data = await fetch()
-    return [EpisodeSchema.model_validate(ep) for ep in data]
+    return [EpisodeSchema.model_validate(ep) for ep in episodes]

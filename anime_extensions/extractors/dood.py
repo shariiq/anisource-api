@@ -13,7 +13,6 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
 
 if TYPE_CHECKING:
@@ -22,7 +21,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"dood|myvidplay|ds2play|doodstream")
 class DoodExtractor(Extractor):
     """Extractor for Doodstream and its mirrors (e.g. myvidplay, dood.to, etc.)."""
 

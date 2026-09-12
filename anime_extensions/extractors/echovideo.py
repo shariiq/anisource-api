@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..exceptions import ParsingError
 from ..models import Stream, Subtitle
 from ..utils.m3u8 import parse_m3u8_streams
@@ -30,7 +29,6 @@ DATSAV_QUALITY_LABELS = {
 }
 
 
-@register_extractor(r"vidplay|mycloud|datsav|dghg|echovideo")
 class EchoVideoExtractor(Extractor):
     """Extractor for Vidplay / MyCloud / DatSaV / DGHG (play.echovideo.ru family)."""
 

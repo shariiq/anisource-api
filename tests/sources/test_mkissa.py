@@ -77,18 +77,18 @@ def source() -> MKissa:
 @pytest.mark.asyncio
 async def test_get_popular(source):
     source._graphql_request = AsyncMock(return_value=POPULAR_RESPONSE)
-    animes, has_next = await source.get_popular()
-    assert len(animes) == 1
-    assert animes[0].id == "123"
-    assert animes[0].title == "Test Anime"
+    page = await source.get_popular()
+    assert len(page.items) == 1
+    assert page.items[0].id == "123"
+    assert page.items[0].title == "Test Anime"
 
 
 @pytest.mark.asyncio
 async def test_search(source):
     source._graphql_request = AsyncMock(return_value=SEARCH_RESPONSE)
-    animes, has_next = await source.search("test")
-    assert len(animes) == 1
-    assert animes[0].id == "123"
+    page = await source.search("test")
+    assert len(page.items) == 1
+    assert page.items[0].id == "123"
 
 
 @pytest.mark.asyncio

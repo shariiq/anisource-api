@@ -10,8 +10,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from .metadata import SourceMetadata
-from .models import Anime, Episode, Server, Stream
+from .metadata import SourceCapability, SourceMetadata
+from .models import Anime, Episode, Page, Server, Stream
 
 if TYPE_CHECKING:
     from .runtime import SourceContext
@@ -35,20 +35,27 @@ class Source(ABC):
         """Initialize the source with its execution context."""
         self.context = context
 
+    def supports(self, capability: SourceCapability) -> bool:
+        """Check if the source supports a specific operation."""
+        return capability in self.metadata.capabilities
+
     # ------------------------------------------------------------------
     # Listing
     # ------------------------------------------------------------------
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
-        """Return (anime list, has_next_page) for popular/trending."""
+    @abstractmethod
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
+        """Return a Page of anime for popular/trending."""
         raise NotImplementedError
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
-        """Return (anime list, has_next_page) for latest updates."""
+    @abstractmethod
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
+        """Return a Page of anime for latest updates."""
         raise NotImplementedError
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
-        """Search by *query*, returning (anime list, has_next_page)."""
+    @abstractmethod
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
+        """Search by *query*, returning a Page of anime."""
         raise NotImplementedError
 
     # ------------------------------------------------------------------

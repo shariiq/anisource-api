@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Callable
 from typing import TYPE_CHECKING, TypeVar
 
-from .errors import ExtractorError
+from .errors import DuplicateSourceError, ExtractorError
 
 if TYPE_CHECKING:
     from .extractor import Extractor
@@ -41,7 +40,7 @@ class SourceRegistry:
 
         id_ = cls.metadata.id
         if id_ in self._sources:
-            log.warning("Overwriting registered source %r with %r", id_, cls)
+            raise DuplicateSourceError(id_)
 
         self._sources[id_] = cls
         log.debug("Registered source %r", id_)
@@ -54,15 +53,8 @@ class SourceRegistry:
     def list_all(self) -> list[type[Source]]:
         return [cls for id_, cls in self._sources.items() if id_ not in _QUARANTINED_SOURCES]
 
-
-# Global singleton purely for decorator-based registration
-_SOURCE_REGISTRY = SourceRegistry()
-
-
-def register_source[S: Source](cls: S) -> S:
-    """Class decorator to register a concrete Source."""
-    _SOURCE_REGISTRY.register(cls)
-    return cls
+    def __len__(self) -> int:
+        return len(self._sources)
 
 
 # ----------------------------------------------------------------------
@@ -73,9 +65,10 @@ E = TypeVar("E", bound=type["Extractor"])
 
 
 class ExtractorRegistration:
-    def __init__(self, cls: type[Extractor], pattern: re.Pattern[str]) -> None:
+    def __init__(self, cls: type[Extractor], pattern: re.Pattern[str], priority: int = 0) -> None:
         self.cls = cls
         self.pattern = pattern
+        self.priority = priority
 
 
 class ExtractorRegistry:
@@ -84,11 +77,18 @@ class ExtractorRegistry:
     def __init__(self) -> None:
         self._extractors: list[ExtractorRegistration] = []
 
-    def register(self, cls: type[Extractor], pattern: str | re.Pattern[str]) -> None:
+    def register(
+        self, cls: type[Extractor], pattern: str | re.Pattern[str], priority: int = 0
+    ) -> None:
         """Register an extractor class to handle URLs matching *pattern*."""
         compiled = re.compile(pattern, re.IGNORECASE) if isinstance(pattern, str) else pattern
-        self._extractors.append(ExtractorRegistration(cls, compiled))
-        log.debug("Registered extractor %r for pattern %r", cls.__name__, compiled.pattern)
+        self._extractors.append(ExtractorRegistration(cls, compiled, priority))
+        log.debug(
+            "Registered extractor %r for pattern %r (priority %d)",
+            cls.__name__,
+            compiled.pattern,
+            priority,
+        )
 
     def resolve(self, url: str) -> type[Extractor]:
         """Find the exact Extractor class that handles *url*.
@@ -96,23 +96,17 @@ class ExtractorRegistry:
         Raises:
             ExtractorError if no extractor matches, or multiple match.
         """
-        matches = [reg.cls for reg in self._extractors if reg.pattern.search(url)]
+        # Sort by priority (descending) so higher priority extractors match first
+        sorted_extractors = sorted(self._extractors, key=lambda r: r.priority, reverse=True)
+        matches = [reg.cls for reg in sorted_extractors if reg.pattern.search(url)]
         if not matches:
             raise ExtractorError(f"No extractor found for URL: {url}")
 
-        # We allow exactly one match or pick the first if deliberately chained.
-        # For our architecture, picking the first registered match is correct.
+        # We pick the first match (highest priority)
         return matches[0]
+
+    def __len__(self) -> int:
+        return len(self._extractors)
 
 
 _EXTRACTOR_REGISTRY = ExtractorRegistry()
-
-
-def register_extractor(pattern: str) -> Callable[[E], E]:
-    """Class decorator to register a concrete Extractor by regex pattern."""
-
-    def decorator(cls: E) -> E:
-        _EXTRACTOR_REGISTRY.register(cls, pattern)
-        return cls
-
-    return decorator

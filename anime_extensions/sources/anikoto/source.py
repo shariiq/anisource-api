@@ -13,9 +13,8 @@ from bs4 import BeautifulSoup
 
 from ...core.errors import ExtractorError
 from ...core.metadata import SourceCapability, SourceMetadata
-from ...core.registry import register_source
 from ...core.source import Source
-from ...models import Anime, Episode, Server, Stream, Subtitle
+from ...models import Anime, Episode, Page, Server, Stream, Subtitle
 from ...utils.crypto import vrf_encrypt
 
 if TYPE_CHECKING:
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_source
 class Anikoto(Source):
     """Anikoto anime source."""
 
@@ -81,19 +79,21 @@ class Anikoto(Source):
         """Fetch source JSON through the runtime-owned HTTP client."""
         return await self.context.http.get_json(url, headers=headers, params=params)
 
-    async def get_popular(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
         """Fetch popular anime."""
         url = f"{self.base_url}/most-viewed/"
         html = await self._request(url, params={"page": page})
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def get_latest(self, page: int = 1) -> tuple[list[Anime], bool]:
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
         """Fetch latest updated anime."""
         url = f"{self.base_url}/latest-updated/"
         html = await self._request(url, params={"page": page})
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
-    async def search(self, query: str, page: int = 1) -> tuple[list[Anime], bool]:
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
         """Search anime by query."""
         params = {
             "keyword": query,
@@ -102,7 +102,8 @@ class Anikoto(Source):
         }
         url = f"{self.base_url}/filter"
         html = await self._request(url, params=params)
-        return self._parse_listing(html)
+        items, has_next = self._parse_listing(html)
+        return Page(items=items, page=page, has_next=has_next)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse anime listing page."""
@@ -438,7 +439,7 @@ class Anikoto(Source):
             return await self._extract_direct_m3u8(embed_url, server_id)
 
         try:
-            extractor = self.context.runtime.resolve_extractor(embed_url)
+            extractor = self.context.extractors.resolve(embed_url)
         except ExtractorError:
             return await self._extract_from_player(embed_url, server_id, ep_url)
 

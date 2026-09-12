@@ -126,6 +126,8 @@ class HttpClient:
                 return await resp.text(errors="replace")
         except aiohttp.ServerTimeoutError as exc:
             raise TimeoutError(f"GET {url} timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise HttpError(f"GET {url} failed: {exc}") from exc
 
     async def get_json(
         self,
@@ -151,6 +153,8 @@ class HttpClient:
                     raise ParsingError(f"Failed to decode JSON from {url}") from exc
         except aiohttp.ServerTimeoutError as exc:
             raise TimeoutError(f"GET {url} timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise HttpError(f"GET {url} failed: {exc}") from exc
 
     async def post_json(
         self,
@@ -179,6 +183,8 @@ class HttpClient:
                     raise ParsingError(f"Failed to decode JSON from {url}") from exc
         except aiohttp.ServerTimeoutError as exc:
             raise TimeoutError(f"POST {url} timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise HttpError(f"POST {url} failed: {exc}") from exc
 
     async def get_bytes(
         self,
@@ -201,6 +207,8 @@ class HttpClient:
                 return await resp.read()
         except aiohttp.ServerTimeoutError as exc:
             raise TimeoutError(f"GET {url} timed out") from exc
+        except aiohttp.ClientError as exc:
+            raise HttpError(f"GET {url} failed: {exc}") from exc
 
     # Context manager support
     async def __aenter__(self) -> HttpClient:

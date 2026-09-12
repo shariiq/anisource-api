@@ -38,7 +38,7 @@ async def test_source_full_pipeline(source_class: type[Any]) -> None:
 
     runtime = ExtensionRuntime()
     await runtime.start()
-    runtime.sources.register(source_class)
+    # Sources are already registered via _register_builtins() during start()
     source = runtime.get_source(source_class.metadata.id)
     diagnostics: list[str] = []
     try:
@@ -80,7 +80,8 @@ async def _search_candidates(source: Any, diagnostics: list[str]) -> list[Anime]
     candidates: list[Anime] = []
     for query in TEST_QUERIES:
         try:
-            results, _ = await source.search(query)
+            page_data = await source.search(query)
+            results = page_data.items
         except Exception as error:
             diagnostics.append(f"search({query!r}): {error}")
             continue

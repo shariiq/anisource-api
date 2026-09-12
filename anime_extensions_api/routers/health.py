@@ -7,7 +7,7 @@ import time
 from fastapi import APIRouter
 
 from ..config import get_settings
-from ..dependencies import CacheDep, ManagerDep
+from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import HealthCheckResponse
 
 router = APIRouter(tags=["Health"])
@@ -24,7 +24,7 @@ _START_TIME = time.time()
 )
 async def health_check(
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> HealthCheckResponse:
     """Check health, cache stats, and memory telemetry."""
@@ -72,6 +72,6 @@ async def health_check(
         version=settings.version,
         uptime_seconds=round(time.time() - _START_TIME, 2),
         memory_usage_mb=round(memory_mb, 2),
-        active_sources=len(source_manager.list_sources()),
+        active_sources=len(runtime.sources.list_all()),
         cache_stats=cache.get_stats(),
     )

@@ -136,11 +136,11 @@ async def test_get_streams_resolves_registered_extractor(source: Anikoto):
     source._get_embed_link = AsyncMock(return_value="https://dood.to/e/abc")
     extractor = MagicMock()
     extractor.extract = AsyncMock(return_value=[])
-    source.context.runtime.resolve_extractor.return_value = extractor
+    source.context.extractors.resolve.return_value = extractor
 
     await source.get_streams("ep-id-1&epurl=/watch/frieren-1/ep-1", "srv-1")
 
-    source.context.runtime.resolve_extractor.assert_called_once_with("https://dood.to/e/abc")
+    source.context.extractors.resolve.assert_called_once_with("https://dood.to/e/abc")
     extractor.extract.assert_awaited_once_with("https://dood.to/e/abc", label_prefix="")
 
 

@@ -4,13 +4,14 @@ from typing import Annotated
 
 from fastapi import Depends, Request
 
+from anime_extensions.core import ExtensionRuntime
+
 from .services.cache import AsyncTTLCache
-from .services.source_manager import SourceManager
 
 
-def get_source_manager(request: Request) -> SourceManager:
-    """Dependency to retrieve the configured SourceManager from application state."""
-    return request.app.state.source_manager
+def get_runtime(request: Request) -> ExtensionRuntime:
+    """Dependency to retrieve the configured ExtensionRuntime from application state."""
+    return request.app.state.runtime
 
 
 def get_cache(request: Request) -> AsyncTTLCache:
@@ -18,5 +19,5 @@ def get_cache(request: Request) -> AsyncTTLCache:
     return request.app.state.cache
 
 
-ManagerDep = Annotated[SourceManager, Depends(get_source_manager)]
+RuntimeDep = Annotated[ExtensionRuntime, Depends(get_runtime)]
 CacheDep = Annotated[AsyncTTLCache, Depends(get_cache)]

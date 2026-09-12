@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 from ..core.errors import ExtractorError
 from ..core.extractor import Extractor
 from ..core.models import Stream
-from ..core.registry import register_extractor
 from ..utils.m3u8 import parse_m3u8_streams
 
 if TYPE_CHECKING:
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"streamlare\.com|slwatch\.co")
 class StreamlareExtractor(Extractor):
     """Extractor for Streamlare video hosting."""
 

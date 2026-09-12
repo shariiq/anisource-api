@@ -15,6 +15,7 @@ from anime_extensions.core import (
     SourceRegistry,
     UpstreamNotFound,
 )
+from anime_extensions.models import Anime, Page
 
 # --- Mock Extensions ---
 
@@ -26,6 +27,15 @@ class MockSource(Source):
         base_url="https://mock.source",
         capabilities={SourceCapability.SEARCH, SourceCapability.DETAILS},
     )
+
+    async def get_popular(self, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
+
+    async def get_latest(self, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
+
+    async def search(self, query: str, page: int = 1) -> Page[Anime]:
+        return Page(items=[], page=page, has_next=False)
 
     async def get_details(self, anime_id: str):
         return f"details for {anime_id}"
@@ -100,7 +110,6 @@ async def test_source_context_injection():
         runtime.sources.register(MockSource)
         source = runtime.get_source("mock-source")
 
-        assert source.context.runtime == runtime
         assert source.context.http == runtime.http
         assert source.context.extractors == runtime.extractors
 

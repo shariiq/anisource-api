@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Query
 
+from anime_extensions.core.errors import SourceNotFoundError, UnsupportedCapabilityError
+from anime_extensions.core.metadata import SourceCapability
+from anime_extensions.core.models import Server, Stream
+
 from ..config import get_settings
-from ..dependencies import CacheDep, ManagerDep
+from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import ServerSchema, StreamSchema
+from ._cache import fetch_cached
 
 log = logging.getLogger(__name__)
 
@@ -28,26 +32,30 @@ async def get_servers(
     source_id: str,
     episode_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[ServerSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.SERVERS):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.SERVERS)
+
     settings = get_settings()
 
-    async def fetch() -> list[dict[str, Any]]:
-        servers = await source.get_servers(episode_id=episode_id)
-        items = [ServerSchema.model_validate(srv) for srv in servers]
-        return [item.model_dump() for item in items]
+    async def _fetch() -> list[Server]:
+        return await source.get_servers(episode_id=episode_id)
 
     cache_key = f"{source.metadata.id}:servers:{episode_id}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.servers_ttl_seconds
-        )
-        return [ServerSchema.model_validate(srv) for srv in data]
+    servers: list[Server] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.servers_ttl_seconds,
+    )
 
-    data = await fetch()
-    return [ServerSchema.model_validate(srv) for srv in data]
+    return [ServerSchema.model_validate(srv) for srv in servers]
 
 
 @router.get(
@@ -65,23 +73,27 @@ async def get_streams(
         ..., description="Server identifier obtained from the /servers endpoint."
     ),
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
     cache: CacheDep,
 ) -> list[StreamSchema]:
-    source = source_manager.get_source(source_id)
+    source = runtime.get_source(source_id)
+    if source is None:
+        raise SourceNotFoundError(source_id)
+    if not source.supports(SourceCapability.STREAMS):
+        raise UnsupportedCapabilityError(source.metadata.id, SourceCapability.STREAMS)
+
     settings = get_settings()
 
-    async def fetch() -> list[dict[str, Any]]:
-        streams = await source.get_streams(episode_id=episode_id, server_id=server_id)
-        items = [StreamSchema.model_validate(stream) for stream in streams]
-        return [item.model_dump() for item in items]
+    async def _fetch() -> list[Stream]:
+        return await source.get_streams(episode_id=episode_id, server_id=server_id)
 
     cache_key = f"{source.metadata.id}:streams:{episode_id}:{server_id}"
-    if settings.cache.enabled:
-        data = await cache.get_or_set(
-            cache_key, fetch, ttl_seconds=settings.cache.streams_ttl_seconds
-        )
-        return [StreamSchema.model_validate(stream) for stream in data]
+    streams: list[Stream] = await fetch_cached(
+        cache,
+        cache_key,
+        _fetch,
+        enabled=settings.cache.enabled,
+        ttl_seconds=settings.cache.streams_ttl_seconds,
+    )
 
-    data = await fetch()
-    return [StreamSchema.model_validate(stream) for stream in data]
+    return [StreamSchema.model_validate(stream) for stream in streams]

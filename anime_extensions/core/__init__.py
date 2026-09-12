@@ -26,7 +26,9 @@ from .errors import (
     HttpError,
     ParsingError,
     SourceError,
+    SourceNotFoundError,
     TimeoutError,
+    UnsupportedCapabilityError,
     UpstreamNotFound,
     UpstreamRateLimited,
     UpstreamUnavailable,
@@ -35,7 +37,7 @@ from .extractor import Extractor
 from .http import HttpClient
 from .metadata import SourceCapability, SourceMetadata
 from .models import Anime, AnimeStatus, Episode, Server, Stream, Subtitle
-from .registry import ExtractorRegistry, SourceRegistry, register_extractor, register_source
+from .registry import ExtractorRegistry, SourceRegistry
 from .runtime import ExtensionRuntime, SourceContext
 from .source import Source
 
@@ -58,14 +60,13 @@ __all__ = [
     # Registry
     "SourceRegistry",
     "ExtractorRegistry",
-    "register_source",
-    "register_extractor",
     # Runtime
     "ExtensionRuntime",
     "SourceContext",
     # Errors
     "AnimeExtensionError",
     "SourceError",
+    "SourceNotFoundError",
     "HttpError",
     "UpstreamNotFound",
     "UpstreamRateLimited",
@@ -74,4 +75,5 @@ __all__ = [
     "ParsingError",
     "ExtractorError",
     "CryptoError",
+    "UnsupportedCapabilityError",
 ]

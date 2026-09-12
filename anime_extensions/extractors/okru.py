@@ -11,11 +11,9 @@ from bs4 import BeautifulSoup
 from ..core.errors import ParsingError
 from ..core.extractor import Extractor
 from ..core.models import Stream
-from ..core.registry import register_extractor
 from ..utils.m3u8 import parse_m3u8_streams
 
 
-@register_extractor(r"ok\.ru|okru|odnoklassniki\.ru")
 class OkruExtractor(Extractor):
     """Extractor for Ok.ru (Odnoklassniki) video hosting."""
 

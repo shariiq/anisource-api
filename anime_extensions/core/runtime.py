@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from .http import HttpClient
-from .registry import _EXTRACTOR_REGISTRY, _SOURCE_REGISTRY, ExtractorRegistry, SourceRegistry
+from .registry import ExtractorRegistry, SourceRegistry
 
 if TYPE_CHECKING:
     from .extractor import Extractor
@@ -27,8 +27,6 @@ class SourceContext:
 
     http: HttpClient
     extractors: ExtractorRegistry
-    # We pass the runtime itself in case sources need to instantiate other components
-    runtime: ExtensionRuntime
 
 
 class ExtensionRuntime:
@@ -44,20 +42,35 @@ class ExtensionRuntime:
     ) -> None:
         """Initialize the runtime.
 
-        If components are not provided, it registers the global defaults.
+        If registries are not provided, new empty registries are created.
+        If load_builtins is True, built-in sources and extractors are registered.
         """
-        if load_builtins:
-            self._load_builtins()
-
         self.http = http_client or HttpClient()
-        self.sources = source_registry or _SOURCE_REGISTRY
-        self.extractors = extractor_registry or _EXTRACTOR_REGISTRY
+        self.sources = source_registry or SourceRegistry()
+        self.extractors = extractor_registry or ExtractorRegistry()
 
-    @staticmethod
-    def _load_builtins() -> None:
-        """Import built-in sources and extractors to ensure decorator registration."""
-        import anime_extensions.extractors  # noqa: F401
-        import anime_extensions.sources  # noqa: F401
+        if load_builtins:
+            self._register_builtins()
+
+    def _register_builtins(self) -> None:
+        """Explicitly register built-in sources and extractors from catalogues."""
+        # Import catalogues (not at module level to avoid circular imports)
+        from anime_extensions.extractors import BUILTIN_EXTRACTORS
+        from anime_extensions.sources import BUILTIN_SOURCES
+
+        # Register sources
+        for source_cls in BUILTIN_SOURCES:
+            self.sources.register(source_cls)
+
+        # Register extractors with their patterns and priorities
+        for extractor_cls, pattern, priority in BUILTIN_EXTRACTORS:
+            self.extractors.register(extractor_cls, pattern, priority)
+
+        log.info(
+            "Registered %d sources and %d extractors",
+            len(self.sources),
+            len(self.extractors),
+        )
 
     async def start(self) -> None:
         """Start the runtime (connects HTTP)."""
@@ -81,7 +94,6 @@ class ExtensionRuntime:
         return SourceContext(
             http=self.http,
             extractors=self.extractors,
-            runtime=self,
         )
 
     def get_source(self, id_: str) -> Source | None:

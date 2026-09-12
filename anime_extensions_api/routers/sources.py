@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ..dependencies import ManagerDep
+from anime_extensions.core.errors import SourceNotFoundError
+
+from ..dependencies import RuntimeDep
 from ..schemas import SourceInfoResponse, SourceListResponse
 
 router = APIRouter(prefix="/sources", tags=["Sources"])
@@ -18,15 +20,15 @@ router = APIRouter(prefix="/sources", tags=["Sources"])
 )
 async def list_sources(
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
 ) -> SourceListResponse:
     sources = [
         SourceInfoResponse(
-            id=src.metadata.id,
-            name=src.metadata.name,
-            base_url=src.metadata.base_url,
+            id=source_cls.metadata.id,
+            name=source_cls.metadata.name,
+            base_url=source_cls.metadata.base_url,
         )
-        for src in source_manager.list_sources()
+        for source_cls in runtime.sources.list_all()
     ]
     return SourceListResponse(sources=sources, count=len(sources))
 
@@ -40,11 +42,16 @@ async def list_sources(
 async def get_source(
     source_id: str,
     *,
-    source_manager: ManagerDep,
+    runtime: RuntimeDep,
 ) -> SourceInfoResponse:
-    src = source_manager.get_source(source_id)
+    source_cls = runtime.sources.get(source_id)
+    if source_cls is None:
+        raise SourceNotFoundError(source_id)
+
+    # Instantiate source to access metadata
+    source = source_cls(context=runtime.context)
     return SourceInfoResponse(
-        id=src.metadata.id,
-        name=src.metadata.name,
-        base_url=src.metadata.base_url,
+        id=source.metadata.id,
+        name=source.metadata.name,
+        base_url=source.metadata.base_url,
     )

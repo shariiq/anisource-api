@@ -12,10 +12,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from anime_extensions.core import ExtensionRuntime, SourceNotFoundError
 from anime_extensions.exceptions import (
     AnimeExtensionError,
     HttpError,
     ParsingError,
+    UnsupportedCapabilityError,
     UpstreamNotFound,
     UpstreamRateLimited,
 )
@@ -27,7 +29,6 @@ from .config import APISettings, get_settings
 from .routers import anime, health, sources, streams
 from .schemas import ErrorDetail, ErrorResponse
 from .services.cache import AsyncTTLCache
-from .services.source_manager import SourceManager, SourceNotFoundError
 
 # Configure structured logging
 logging.basicConfig(
@@ -53,16 +54,16 @@ def _upstream_error_response(
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application-scoped runtime and cache lifecycles."""
     log.info("Starting up Anime Extensions API...")
-    source_manager = SourceManager()
+    runtime = ExtensionRuntime()
+    await runtime.start()
     cache = AsyncTTLCache(max_items=1000)
-    app.state.source_manager = source_manager
+    app.state.runtime = runtime
     app.state.cache = cache
-    await source_manager.initialize()
     try:
         yield
     finally:
         log.info("Shutting down Anime Extensions API...")
-        await source_manager.close()
+        await runtime.close()
         cache.clear()
 
 
@@ -148,6 +149,14 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     async def parsing_error_handler(request: Request, exc: ParsingError) -> JSONResponse:
         return _upstream_error_response(
             request, status.HTTP_502_BAD_GATEWAY, "UPSTREAM_PARSE_ERROR", str(exc)
+        )
+
+    @app.exception_handler(UnsupportedCapabilityError)
+    async def unsupported_capability_handler(
+        request: Request, exc: UnsupportedCapabilityError
+    ) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_501_NOT_IMPLEMENTED, "UNSUPPORTED_CAPABILITY", str(exc)
         )
 
     @app.exception_handler(HttpError)

@@ -12,7 +12,7 @@ async def aniwaves_source():
     from anime_extensions.core import ExtensionRuntime
 
     async with ExtensionRuntime() as runtime:
-        runtime.sources.register(AniWaves)
+        # Sources are already registered via _register_builtins() during start()
         yield runtime.get_source("aniwaves")
 
 

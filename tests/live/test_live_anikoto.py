@@ -12,7 +12,7 @@ async def anikoto_source():
     from anime_extensions.core import ExtensionRuntime
 
     async with ExtensionRuntime() as runtime:
-        runtime.sources.register(Anikoto)
+        # Sources are already registered via _register_builtins() during start()
         yield runtime.get_source("anikoto")
 
 

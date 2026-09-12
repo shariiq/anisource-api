@@ -10,7 +10,7 @@ This guide covers source and extractor repairs in the current `anime-extensions-
 | Domain models | `anime_extensions/core/models.py`, `metadata.py` | Anime, episode, server, stream, subtitle, and source metadata types |
 | Networking | `anime_extensions/core/http.py` | Shared session lifecycle, pooling, timeouts, TLS, and HTTP error translation |
 | Registration | `anime_extensions/core/registry.py` | Source and URL-pattern extractor registries |
-| Composition | `anime_extensions/core/runtime.py` | `ExtensionRuntime` and `SourceContext` dependency injection |
+| Composition | `anime_extensions/core/runtime.py` | `ExtensionRuntime` and `ExtensionContext` dependency injection (`SourceContext` compatibility alias) |
 | Sources | `anime_extensions/sources/` | Site-specific catalog and server implementations |
 | Extractors | `anime_extensions/extractors/` | Hoster-specific stream extraction |
 | API | `anime_extensions_api/` | FastAPI routing, schemas, caching, lifecycle, and error responses |

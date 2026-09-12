@@ -11,7 +11,7 @@ This document tracks the surgical architectural enhancements for the `anime-exte
 
 ## Roadmap Checklist
 
-- [x] **Config System Foundation**: Typed configuration dataclasses (`anime_extensions/core/config.py`)
+- [x] **Configuration Ownership Cleanup**: Removed the unused centralized configuration module; component-specific constants remain with their implementations while runtime concerns stay in `HttpClient` and `ExtensionRuntime`.
 - [x] **Documentation**: Extractor Contributor Guide (`docs/WRITING_EXTRACTORS.md`)
 - [x] **1. Explicit Plugin Catalogue & Runtime-Owned Registries**: Remove global decorator mutation side-effects on module import; runtime directly registers explicit `BUILTIN_SOURCES` and `BUILTIN_EXTRACTORS`.
 - [x] **2. Deterministic Extractor Resolution & Conflict Semantics**: Introduce explicit registration priority on extractors and raise `DuplicateSourceError` on collisions. In a plugin architecture, implicit resolution order is a correctness issue.
@@ -29,17 +29,15 @@ This document tracks the surgical architectural enhancements for the `anime-exte
 
 ## Architectural Improvement Cards
 
-### Config System Foundation
+### Configuration Ownership & Runtime Lifecycle
 
-**Why a centralized configuration system is necessary:**
+**Why configuration ownership belongs with implementations and the runtime:**
 
-1. **Eliminate magic numbers**: Extractor timeouts, retry policies, user-agent strings, and quality labels are currently scattered across implementation files. When a hoster changes its behavior (e.g., longer PoW solving time), developers must hunt through multiple files to update constants.
+1. **Avoid artificial indirection**: Extractor timeouts, retry policies, and user-agent strings are hoster-specific details that evolve with individual scraping protocols. Keeping constants close to their implementations avoids scattering single-purpose settings into a separate shared configuration module.
 
-2. **Enable runtime tuning**: A typed configuration dataclass allows operators to override settings via environment variables or config files without code changes — critical for production deployments where different hosters require different timeouts.
+2. **Runtime-owned HTTP lifecycle**: Shared networking configuration (connection pooling, timeouts, TLS validation defaults) is owned by `HttpClient` and injected via `ExtensionContext`.
 
-3. **Type safety**: Using `dataclass(frozen=True)` provides immutable configuration with proper type hints, so linters and IDEs catch misconfiguration at development time rather than runtime.
-
-4. **Consistency**: Configuration for related components (Byse, Dood, EchoVideo) inherits from a common `ExtractorConfig`, ensuring all extractors share the same timeout and user-agent defaults unless explicitly overridden.
+3. **Explicit overrides**: Runtime-level source exclusion is managed cleanly through `ExtensionRuntime(disabled_sources={...})` and catalogue flags (`BuiltinSource(..., enabled=False)`).
 
 ---
 

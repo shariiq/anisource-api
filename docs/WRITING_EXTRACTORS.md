@@ -24,13 +24,11 @@ import logging
 from typing import Any
 
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..models import Stream, Subtitle
 
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"example\.com|examplehost\.net")
 class ExampleExtractor(Extractor):
     """Extractor for ExampleHost video provider."""
 
@@ -52,24 +50,33 @@ class ExampleExtractor(Extractor):
         return streams
 ```
 
-### 2. Register the URL Pattern
+### 2. Register in the Extractor Catalogue
 
-The `@register_extractor` decorator accepts a regex pattern. The runtime matches embed URLs against all registered patterns and selects the first match.
+Extractors are registered in `anime_extensions/extractors/__init__.py` within the `BUILTIN_EXTRACTORS` catalogue tuple. Each entry defines the extractor class, regex matching pattern, and priority integer (higher priority matched first):
+
+```python
+BUILTIN_EXTRACTORS: tuple[tuple[type[Extractor], str | re.Pattern[str], int], ...] = (
+    # ...
+    (ExampleExtractor, r"example\.com|examplehost\.net", 0),
+)
+```
+
+Common pattern examples:
 
 ```python
 # Match multiple domains
-@register_extractor(r"vidplay|mycloud|datsav|dghg|echovideo")
+(EchoVideoExtractor, r"vidplay|mycloud|datsav|dghg|echovideo", 0)
 
 # Match with path context
-@register_extractor(r"byfms|gn1r5n|bysekoze")
+(ByseExtractor, r"byfms|gn1r5n|bysekoze", 0)
 
 # Match with strict domain boundaries
-@register_extractor(r"dood|myvidplay|ds2play|doodstream")
+(DoodStreamExtractor, r"dood|myvidplay|ds2play|doodstream", 0)
 ```
 
 ### 3. Export from `__init__.py`
 
-Add your extractor to `anime_extensions/extractors/__init__.py`:
+Add your extractor to `anime_extensions/extractors/__init__.py` `__all__`:
 
 ```python
 from .example import ExampleExtractor
@@ -77,6 +84,7 @@ from .example import ExampleExtractor
 __all__ = [
     # ... existing extractors
     "ExampleExtractor",
+    "BUILTIN_EXTRACTORS",
 ]
 ```
 
@@ -323,14 +331,12 @@ from typing import Any
 
 from ..core.config import DEFAULT_EXTRACTOR_CONFIG
 from ..core.extractor import Extractor
-from ..core.registry import register_extractor
 from ..exceptions import ParsingError
 from ..models import Stream
 
 log = logging.getLogger(__name__)
 
 
-@register_extractor(r"simplehost\.com")
 class SimpleHostExtractor(Extractor):
     """Extractor for SimpleHost direct MP4 links."""
 

@@ -20,7 +20,6 @@ Operate at principal-engineer quality.
   - or `git -C anime-extensions-py <cmd>`
 
 - **Repository:** `https://github.com/shariiq/anisource-api.git`
-
 - **Branch:** `main`
 
 - **Deployed API:** `https://anisource-api.onrender.com/`
@@ -118,14 +117,12 @@ The SDK must not depend on FastAPI.
 
 3. **Discovery is registry-based.**
 
-   Use:
-
-   - `@register_source`
-   - `@register_extractor(r"pattern")`
+   Append source classes to `BUILTIN_SOURCES` in `anime_extensions/sources/__init__.py`.
+   Append `(ExtractorClass, pattern, priority)` entries to `BUILTIN_EXTRACTORS` in `anime_extensions/extractors/__init__.py`.
 
    Registrations are exported from `__init__.py`.
 
-   `ExtensionRuntime._load_builtins()` performs automatic discovery.
+   `ExtensionRuntime._register_builtins()` imports these catalogues and registers entries into runtime-scoped registries.
 
    Do not introduce manual registration.
 

@@ -2,7 +2,7 @@
 
 The runtime owns `SourceRegistry` and `ExtractorRegistry` instances. Sources and
 extractors are registered explicitly via catalogue-driven discovery in
-`ExtensionRuntime._load_builtins()`, giving deterministic startup and dependency flow.
+`ExtensionRuntime._register_builtins()`, giving deterministic startup without global state.
 """
 
 from __future__ import annotations
@@ -92,21 +92,23 @@ class ExtractorRegistry:
         )
 
     def resolve(self, url: str) -> type[Extractor]:
-        """Find the exact Extractor class that handles *url*.
+        """Find the Extractor class that handles *url*.
+
+        Extractors are evaluated in descending priority order. Equal-priority
+        matches retain registration (catalogue) order, so the first registered
+        matching extractor is selected deterministically.
 
         Returns the highest-priority matching extractor. If multiple extractors
         share the highest priority, returns the first match by catalogue order.
 
         Raises:
-            ExtractorError if no extractor matches.
+            ExtractorError if no extractor matches *url*.
         """
-        # Sort by priority (descending) so higher priority extractors match first
         sorted_extractors = sorted(self._extractors, key=lambda r: r.priority, reverse=True)
         matches = [reg.cls for reg in sorted_extractors if reg.pattern.search(url)]
         if not matches:
             raise ExtractorError(f"No extractor found for URL: {url}")
 
-        # We pick the first match (highest priority)
         return matches[0]
 
     def __len__(self) -> int:

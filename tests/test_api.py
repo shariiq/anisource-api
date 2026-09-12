@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from anime_extensions.core import ExtensionRuntime, Source, SourceCapability, SourceMetadata
 from anime_extensions.exceptions import AnimeExtensionError
 from anime_extensions.models import Anime, Episode, Page, Server, Stream, Subtitle
-from anime_extensions_api.app import create_app
+from anime_extensions_api.app import create_app, lifespan
 from anime_extensions_api.config import APISettings, CacheSettings
 from anime_extensions_api.services.cache import AsyncTTLCache
 
@@ -179,6 +179,41 @@ async def app():
     finally:
         await runtime.close()
         app.state.cache.clear()
+
+
+@pytest.mark.asyncio
+async def test_api_production_lifespan():
+    """Verify the production lifespan owns runtime and cache lifecycles."""
+    app = create_app()
+
+    async with lifespan(app):
+        runtime = app.state.runtime
+        cache = app.state.cache
+
+        assert runtime.http.session is not None
+        assert not runtime.http.session.closed
+        await cache.set("lifecycle", "value", ttl_seconds=60)
+        assert await cache.get("lifecycle") == "value"
+
+    assert runtime.http.session is None
+    assert await cache.get("lifecycle") is None
+
+
+@pytest.mark.asyncio
+async def test_api_production_unmocked_e2e():
+    """Verify production dependencies serve health and source catalog endpoints."""
+    app = create_app()
+
+    async with lifespan(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            health = await client.get("/health")
+            sources = await client.get("/api/v1/sources")
+
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert sources.status_code == 200
+    assert sources.json()["count"] == 3
 
 
 @pytest.mark.asyncio

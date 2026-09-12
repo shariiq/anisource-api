@@ -6,7 +6,7 @@ This module provides the foundation for building anime source plugins:
 * **Models**: ``Anime``, ``Episode``, ``Server``, ``Stream``, ``Subtitle``
 * **Metadata**: ``SourceMetadata`` and ``SourceCapability``
 * **HTTP**: ``HttpClient`` with secure defaults
-* **Registry**: runtime-owned source and extractor registries populated from built-in catalogues
+* **Registry**: runtime-owned ``SourceRegistry`` and ``ExtractorRegistry`` populated from built-in catalogues
 * **Runtime**: ``ExtensionRuntime`` and ``SourceContext``
 * **Errors**: Fine-grained exception hierarchy
 

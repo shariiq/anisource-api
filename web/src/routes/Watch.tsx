@@ -1,12 +1,13 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { type AniListMedia, anilistRequest, DETAIL_QUERY } from "~/api/anilist";
 import {
   type ServerItem,
   type StreamItem,
   fetchEpisodes,
   fetchServers,
+  fetchSources,
   fetchStreams,
 } from "~/api/anisource";
 import { VideoPlayer } from "~/features/playback/VideoPlayer";
@@ -18,6 +19,8 @@ import {
 } from "~/features/playback/resolver";
 import { getHistoryForAnime } from "~/features/library/history";
 import "./Watch.css";
+
+type AudioPreference = "sub" | "dub";
 
 export default function Watch() {
   const params = useParams();
@@ -35,19 +38,26 @@ export default function Watch() {
     enabled: Boolean(mediaId() && !Number.isNaN(mediaId())),
     staleTime: 1000 * 60 * 15,
   }));
+  const sourcesQuery = createQuery(() => ({
+    queryKey: ["playback", "sources"],
+    queryFn: ({ signal }) => fetchSources(signal),
+    staleTime: 1000 * 60 * 30,
+  }));
 
   const media = () => detailQuery.data?.Media;
+  const [selectedSourceId, setSelectedSourceId] = createSignal(requestedSource());
   const [resolution, setResolution] = createSignal<ResolutionResult | null>(null);
   const [selectedCandidate, setSelectedCandidate] = createSignal<CandidateScore | null>(null);
   const [selectedEpisodeId, setSelectedEpisodeId] = createSignal("");
   const [selectedServerId, setSelectedServerId] = createSignal("");
   const [selectedStream, setSelectedStream] = createSignal<StreamItem | null>(null);
+  const [audioPreference, setAudioPreference] = createSignal<AudioPreference>("sub");
   const [error, setError] = createSignal("");
   const [isResolving, setIsResolving] = createSignal(false);
   const [isLoadingStreams, setIsLoadingStreams] = createSignal(false);
   let controller: AbortController | undefined;
 
-  const sourceId = createMemo(() => resolution()?.sourceId || requestedSource());
+  const sourceId = createMemo(() => resolution()?.sourceId || "");
   const animeId = createMemo(() => resolution()?.animeId || "");
   const episodeQuery = createQuery(() => ({
     queryKey: ["playback", "episodes", sourceId(), animeId()],
@@ -60,18 +70,27 @@ export default function Watch() {
     const target = selectedEpisodeId();
     return episodes().find((episode) => episode.id === target) || episodes().find((episode) => episode.number === requestedEpisode());
   });
+  const languageAvailable = (language: AudioPreference) => {
+    const episode = currentEpisode();
+    return language === "sub" ? Boolean(episode?.has_sub) : Boolean(episode?.has_dub);
+  };
 
-  const resolve = async () => {
+  const resolve = async (source = selectedSourceId() || undefined) => {
     const currentMedia = media();
     if (!currentMedia || isResolving()) return;
     controller?.abort();
     controller = new AbortController();
+    setResolution(null);
+    setSelectedCandidate(null);
+    setSelectedEpisodeId("");
+    setSelectedServerId("");
+    setSelectedStream(null);
     setIsResolving(true);
     setError("");
     try {
-      const result = await resolveAniListToSource(currentMedia, requestedSource() || undefined, controller.signal);
+      const result = await resolveAniListToSource(currentMedia, source, controller.signal);
       setResolution(result);
-      if (result.status === "not_found") setError("No playable source matched this title.");
+      if (result.status === "not_found") setError("No playable source matched this title. Choose another source and try again.");
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(cause instanceof Error ? cause.message : "Unable to resolve a playback source.");
@@ -82,14 +101,30 @@ export default function Watch() {
   };
 
   createEffect(() => {
-    if (media()) void resolve();
+    if (!selectedSourceId() && sourcesQuery.data?.length) {
+      setSelectedSourceId(requestedSource() || sourcesQuery.data[0].id);
+    }
   });
+
+  createEffect(on(selectedSourceId, (source) => {
+    if (media() && source) void resolve(source);
+  }, { defer: true }));
+
+  createEffect(on(media, () => {
+    if (selectedSourceId()) void resolve(selectedSourceId());
+  }));
 
   createEffect(() => {
     const list = episodes();
     if (!list.length || selectedEpisodeId()) return;
     const match = list.find((episode) => episode.number === requestedEpisode()) || list[0];
     if (match) setSelectedEpisodeId(match.id);
+  });
+
+  createEffect(() => {
+    if (!languageAvailable(audioPreference()) && languageAvailable(audioPreference() === "sub" ? "dub" : "sub")) {
+      setAudioPreference(audioPreference() === "sub" ? "dub" : "sub");
+    }
   });
 
   const selectCandidate = (candidate: CandidateScore) => {
@@ -131,11 +166,7 @@ export default function Watch() {
     enabled: Boolean(sourceId() && currentEpisode()?.id),
     staleTime: 1000 * 30,
   }));
-
-  createEffect(() => {
-    const servers = serversQuery.data ?? [];
-    if (servers.length && !selectedServerId()) void loadStreams(servers[0]);
-  });
+  const servers = () => (serversQuery.data ?? []).filter((server) => server.type.toLowerCase() === audioPreference());
 
   onCleanup(() => controller?.abort());
 
@@ -152,10 +183,32 @@ export default function Watch() {
         </div>
       </div>
 
+      <section class="watch-panel playback-options">
+        <div class="watch-panel-heading"><h2 class="section-heading">Source</h2></div>
+        <div class="source-list" aria-label="Anime source">
+          <For each={sourcesQuery.data ?? []}>
+            {(source) => (
+              <button
+                class={`source-chip ${selectedSourceId() === source.id ? "active" : ""}`}
+                type="button"
+                onClick={() => setSelectedSourceId(source.id)}
+              >
+                {source.name}
+              </button>
+            )}
+          </For>
+        </div>
+      </section>
+
       <Show when={isResolving()}>
         <div class="inline-loading"><span class="spin" /> Finding a compatible AniSource entry…</div>
       </Show>
-      <Show when={error()}><div class="inline-error">{error()}</div></Show>
+      <Show when={error()}>
+        <div class="inline-error">
+          <span>{error()}</span>
+          <button type="button" onClick={() => void resolve()}>Retry</button>
+        </div>
+      </Show>
 
       <Show when={resolution()?.status === "ambiguous"}>
         <section class="watch-panel disambiguation-panel">
@@ -187,7 +240,10 @@ export default function Watch() {
                   {(episode) => (
                     <button class={`episode-item ${currentEpisode()?.id === episode.id ? "active" : ""}`} type="button" onClick={() => { setSelectedEpisodeId(episode.id); setSelectedServerId(""); setSelectedStream(null); }}>
                       <span>Episode {episode.number}</span>
-                      <Show when={episode.is_filler}><small>Filler</small></Show>
+                      <span class="episode-flags">
+                        <Show when={episode.has_sub}><small>Sub</small></Show>
+                        <Show when={episode.has_dub}><small>Dub</small></Show>
+                      </span>
                     </button>
                   )}
                 </For>
@@ -196,7 +252,7 @@ export default function Watch() {
           </aside>
 
           <main class="watch-main">
-            <Show when={selectedStream()} fallback={<div class="player-placeholder">Select a server to begin playback.</div>}>
+            <Show when={selectedStream()} fallback={<div class="player-placeholder">Choose a language and server to begin playback.</div>}>
               {(stream) => (
                 <div class="player-box">
                   <VideoPlayer
@@ -217,19 +273,26 @@ export default function Watch() {
             </Show>
 
             <section class="watch-panel server-panel">
-              <div class="watch-panel-heading"><h2 class="section-heading">Servers</h2><Show when={isLoadingStreams()}><span class="muted">Loading…</span></Show></div>
+              <div class="watch-panel-heading"><h2 class="section-heading">Playback options</h2><Show when={isLoadingStreams()}><span class="muted">Loading…</span></Show></div>
+              <div class="language-list" aria-label="Audio language">
+                <button class={`language-chip ${audioPreference() === "sub" ? "active" : ""}`} type="button" disabled={!languageAvailable("sub")} onClick={() => { setAudioPreference("sub"); setSelectedServerId(""); setSelectedStream(null); }}>Sub</button>
+                <button class={`language-chip ${audioPreference() === "dub" ? "active" : ""}`} type="button" disabled={!languageAvailable("dub")} onClick={() => { setAudioPreference("dub"); setSelectedServerId(""); setSelectedStream(null); }}>Dub</button>
+              </div>
               <div class="server-list">
-                <For each={serversQuery.data ?? []}>
+                <For each={servers()}>
                   {(server) => <button class={`server-chip ${selectedServerId() === server.id ? "active" : ""}`} type="button" onClick={() => void loadStreams(server)}>{server.name}</button>}
                 </For>
               </div>
+              <Show when={!serversQuery.isLoading && currentEpisode() && !servers().length}>
+                <p class="muted server-empty">No {audioPreference()} server is available for this episode.</p>
+              </Show>
             </section>
           </main>
         </div>
       </Show>
 
       <Show when={!isResolving() && resolution()?.status === "not_found"}>
-        <div class="empty-state">Try again later or choose another AniList title.</div>
+        <div class="empty-state">Choose another source above, then try again.</div>
       </Show>
     </div>
   );

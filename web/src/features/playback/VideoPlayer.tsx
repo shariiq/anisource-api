@@ -74,6 +74,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
   async function attachStream(stream: StreamItem) {
     clearMedia();
     latestPosition = props.initialPosition ?? 0;
+    const streamToken = stream.url;
 
     if (stream.is_hls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       try {
@@ -87,7 +88,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
           video,
           url: stream.url,
           onError: (_, details, fatal) => {
-            if (fatal) props.onError?.(`Playback failed: ${details}`);
+            if (fatal) props.onError?.(`Playback failed: ${details}. Try another server or source.`);
           },
         });
       } catch (error) {
@@ -98,7 +99,15 @@ export function VideoPlayer(props: VideoPlayerProps) {
       video.load();
     }
 
-    video.currentTime = latestPosition;
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        if (streamToken === stream.url && latestPosition > 0) {
+          video.currentTime = latestPosition;
+        }
+      },
+      { once: true },
+    );
     progressTimer = window.setInterval(() => {
       handleTimeUpdate();
       persistProgress();
@@ -139,7 +148,15 @@ export function VideoPlayer(props: VideoPlayerProps) {
       }}
       onError={() => props.onError?.("The selected stream could not be played.")}
     >
-      <track kind="captions" default />
+      {props.stream.subtitles.map((subtitle, index) => (
+        <track
+          kind="subtitles"
+          src={subtitle.url}
+          srclang={subtitle.language.slice(0, 2).toLowerCase() || "und"}
+          label={subtitle.label}
+          default={index === 0}
+        />
+      ))}
       Your browser does not support the video element.
     </video>
   );

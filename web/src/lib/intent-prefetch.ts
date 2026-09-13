@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query";
-import { getMediaById } from "~/api/anilist";
+import { DETAIL_QUERY, anilistRequest, type AniListMedia } from "~/api/anilist";
 
 const timers = new Map<number, number>();
 
@@ -14,7 +14,8 @@ export function scheduleDetailPrefetch(
     timers.delete(mediaId);
     void queryClient.prefetchQuery({
       queryKey: ["anime", "detail", mediaId],
-      queryFn: ({ signal }) => getMediaById(mediaId, signal),
+      queryFn: ({ signal }) =>
+        anilistRequest<{ Media: AniListMedia }>(DETAIL_QUERY, { id: mediaId }, signal),
       staleTime: 1000 * 60 * 15, // 15 minutes
     });
   }, delayMs);

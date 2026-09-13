@@ -164,7 +164,7 @@ export const HOME_QUERY = `
       media(status: NOT_YET_RELEASED, sort: START_DATE_DESC, type: ANIME) { ${CARD_FIELDS} }
     }
     airing: Page(page: 1, perPage: 24) {
-      airingSchedules(airingAt_greater: $airingFrom, airingAt_lesser: $airingTo, sort: TIME_ASC) {
+      airingSchedules(airingAt_greater: $airingFrom, airingAt_lesser: $airingTo, sort: TIME) {
         id airingAt timeUntilAiring episode
         media { id title { romaji english native userPreferred } coverImage { large extraLarge color } format episodes siteUrl }
       }
@@ -196,7 +196,7 @@ export const DETAIL_QUERY = `
       description(asHtml: false) genres source countryOfOrigin duration
       tags { id name rank isMediaSpoiler }
       studios { nodes { id name isAnimationStudio } }
-      staff { edges { role node { full native alternative } } }
+      staff { edges { role node { name { full native alternative } } } }
       characters(sort: ROLE, perPage: 12) { edges { role node { id name { full native } image { large } description } voiceActors { id name { full native } language } } }
       relations { edges { relationType node { ${CARD_FIELDS} } } }
       recommendations(sort: RATING_DESC, perPage: 12) { nodes { rating mediaRecommendation { ${CARD_FIELDS} } } }
@@ -210,7 +210,7 @@ export const AIRING_QUERY = `
   query Schedule($from: Int, $to: Int, $page: Int, $perPage: Int) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { currentPage lastPage hasNextPage perPage total }
-      airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME_ASC) {
+      airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) {
         id airingAt timeUntilAiring episode
         media { id title { romaji english native userPreferred } coverImage { large extraLarge color } format episodes siteUrl }
       }

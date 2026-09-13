@@ -10,7 +10,7 @@ import time
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.extractor import Extractor
 from ..models import Stream, Subtitle
@@ -54,8 +54,9 @@ class DoodExtractor(Extractor):
             dood_host = f"{parsed.scheme}://{parsed.netloc}"
 
             # 2. Extract quality from page title
-            soup = BeautifulSoup(text, "html.parser")
-            title_text = soup.title.get_text() if soup.title else ""
+            tree = HTMLParser(text)
+            title = tree.css_first("title")
+            title_text = title.text() if title else ""
             quality_match = re.search(r"(\d{3,4}p)", title_text)
             extracted_quality = quality_match.group(1) if quality_match else "1080p"
 

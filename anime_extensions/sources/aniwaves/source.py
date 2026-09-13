@@ -7,7 +7,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.source import Source
@@ -120,54 +120,58 @@ class AniWaves(Source):
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse an anime listing page."""
-        soup = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(html)
         animes: list[Anime] = []
-        for item in soup.select("div.ani.items > div.item"):
-            name_a = item.select_one("a.name, a.d-title")
+        for item in tree.css("div.ani.items > div.item"):
+            name_a = item.css_first("a.name, a.d-title")
             if not name_a:
                 continue
-            url_path = _EPISODE_SUFFIX_RE.sub("", name_a.get("href", "").split("?")[0])
-            img = item.select_one("div.poster img, img")
+            url_path = _EPISODE_SUFFIX_RE.sub("", name_a.attributes.get("href", "").split("?")[0])
+            img = item.css_first("div.poster img, img")
             animes.append(
                 Anime(
                     id=url_path.split("/watch/")[-1] if "/watch/" in url_path else url_path,
-                    title=name_a.get("data-jp", "").strip() or name_a.get_text(strip=True),
+                    title=name_a.attributes.get("data-jp", "").strip() or name_a.text(strip=True),
                     url=f"{self.base_url}{url_path}",
-                    thumbnail=(img.get("data-src") or img.get("src", "")) if img else "",
+                    thumbnail=(
+                        (img.attributes.get("data-src") or img.attributes.get("src", ""))
+                        if img
+                        else ""
+                    ),
                 )
             )
-        return animes, bool(soup.select("nav > ul.pagination > li.active ~ li"))
+        return animes, bool(tree.css("nav > ul.pagination > li.active ~ li"))
 
     async def get_details(self, anime_id: str) -> Anime:
         """Get full anime details."""
         clean_id = anime_id.split("#")[0].strip("/")
         anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
-        soup = BeautifulSoup(await self._request(f"{self.base_url}{anime_path}"), "html.parser")
-        title_elem = soup.select_one("h1.title, h2.title")
+        tree = HTMLParser(await self._request(f"{self.base_url}{anime_path}"))
+        title_elem = tree.css_first("h1.title, h2.title")
         title = (
-            title_elem.get("data-jp", "").strip() or title_elem.get_text(strip=True)
+            title_elem.attributes.get("data-jp", "").strip() or title_elem.text(strip=True)
             if title_elem
             else ""
         )
-        watch_main = soup.select_one("#watch-main[data-id]")
-        internal_id = watch_main.get("data-id", "") if watch_main else ""
-        img = soup.select_one("#w-info div.poster img")
-        thumbnail = (img.get("data-src") or img.get("src", "")) if img else ""
+        watch_main = tree.css_first("#watch-main[data-id]")
+        internal_id = watch_main.attributes.get("data-id", "") if watch_main else ""
+        img = tree.css_first("#w-info div.poster img")
+        thumbnail = (img.attributes.get("data-src") or img.attributes.get("src", "")) if img else ""
         genres: list[str] = []
         studios: list[str] = []
         status_text = ""
         score: float | None = None
-        for div in soup.select("div.bmeta div.meta > div"):
-            text = div.get_text()
+        for div in tree.css("div.bmeta div.meta > div"):
+            text = div.text()
             if "Genres" in text:
-                genres = [a.get_text(strip=True) for a in div.select("span a")]
+                genres = [a.text(strip=True) for a in div.css("span a")]
             elif "Studios" in text:
-                studios = [a.get_text(strip=True) for a in div.select("span a")]
-            elif "Status" in text and (span := div.select_one("span")):
-                status_text = span.get_text(strip=True).lower()
-            elif ("Scores" in text or "MAL" in text) and (span := div.select_one("span")):
+                studios = [a.text(strip=True) for a in div.css("span a")]
+            elif "Status" in text and (span := div.css_first("span")):
+                status_text = span.text(strip=True).lower()
+            elif ("Scores" in text or "MAL" in text) and (span := div.css_first("span")):
                 with contextlib.suppress(ValueError):
-                    score = float(span.get_text(strip=True).split()[0])
+                    score = float(span.text(strip=True).split()[0])
         status = (
             "ongoing"
             if any(x in status_text for x in ("ongoing", "currently", "airing"))
@@ -175,12 +179,14 @@ class AniWaves(Source):
             if any(x in status_text for x in ("finished", "completed"))
             else "unknown"
         )
-        synopsis = soup.select_one("div.shorting.film-description div.content")
+        synopsis = tree.css_first("div.shorting.film-description div.content")
         alt_titles = (
-            [title_elem.get("data-jp").strip()] if title_elem and title_elem.get("data-jp") else []
+            [title_elem.attributes.get("data-jp", "").strip()]
+            if title_elem and title_elem.attributes.get("data-jp")
+            else []
         )
-        if alt_container := soup.select_one("div.names.font-italic"):
-            for name in alt_container.get_text(strip=True).split(","):
+        if alt_container := tree.css_first("div.names.font-italic"):
+            for name in alt_container.text(strip=True).split(","):
                 if (clean := name.strip()) and clean not in alt_titles:
                     alt_titles.append(clean)
         return Anime(
@@ -188,7 +194,7 @@ class AniWaves(Source):
             title=title,
             url=f"{anime_path}#{internal_id}" if internal_id else anime_path,
             thumbnail=thumbnail,
-            description=synopsis.get_text(strip=True) if synopsis else "",
+            description=synopsis.text(strip=True) if synopsis else "",
             genres=genres,
             studios=studios,
             alternative_titles=alt_titles,
@@ -219,15 +225,21 @@ class AniWaves(Source):
             return []
         episodes: list[Episode] = []
         path = _EPISODE_SUFFIX_RE.sub("", anime_path)
-        for anchor in BeautifulSoup(html_result, "html.parser").select("div.episodes ul li a"):
-            ep_num, ep_ids = anchor.get("data-num", ""), anchor.get("data-ids", "")
+        for anchor in HTMLParser(html_result).css("div.episodes ul li a"):
+            ep_num = anchor.attributes.get("data-num", "")
+            ep_ids = anchor.attributes.get("data-ids", "")
             if not ep_num and not ep_ids:
                 continue
             parent = anchor.parent
-            title_span = parent.select_one("span.d-title") if parent else None
-            title = title_span.get_text(strip=True) if title_span else ""
-            if not title and parent and parent.get("title"):
-                title = parent.get("title").split("Release:")[0].split("Softsub")[0].strip()
+            title_span = parent.css_first("span.d-title") if parent else None
+            title = title_span.text(strip=True) if title_span else ""
+            if not title and parent and parent.attributes.get("title"):
+                title = (
+                    parent.attributes.get("title", "")
+                    .split("Release:")[0]
+                    .split("Softsub")[0]
+                    .strip()
+                )
             try:
                 ep_number = float(ep_num)
             except ValueError:
@@ -237,8 +249,8 @@ class AniWaves(Source):
                     id=f"{ep_ids}&epurl={path}/episode/{ep_num}",
                     number=ep_number,
                     title=title or f"Episode {ep_num}",
-                    has_sub=anchor.get("data-sub") == "1",
-                    has_dub=anchor.get("data-dub") == "1",
+                    has_sub=anchor.attributes.get("data-sub") == "1",
+                    has_dub=anchor.attributes.get("data-dub") == "1",
                 )
             )
         return list(reversed(episodes))
@@ -260,13 +272,11 @@ class AniWaves(Source):
         if not isinstance(data, dict) or not (html_result := data.get("result", "")):
             return []
         servers: list[Server] = []
-        for type_div in BeautifulSoup(html_result, "html.parser").select(
-            "div.servers div.type[data-type]"
-        ):
-            video_type = self._resolve_video_type(type_div.get("data-type", "").lower())
-            for item in type_div.select("li"):
-                if (server_id := item.get("data-link-id", "")) and (
-                    raw_name := item.get_text(strip=True)
+        for type_div in HTMLParser(html_result).css("div.servers div.type[data-type]"):
+            video_type = self._resolve_video_type(type_div.attributes.get("data-type", "").lower())
+            for item in type_div.css("li"):
+                if (server_id := item.attributes.get("data-link-id", "")) and (
+                    raw_name := item.text(strip=True)
                 ):
                     servers.append(
                         Server(

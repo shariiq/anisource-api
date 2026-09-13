@@ -7,7 +7,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
@@ -47,11 +47,11 @@ class VtubeExtractor(Extractor):
             log.warning("Vtube request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(html)
         unpacked: str | None = None
 
-        for script in doc.find_all("script"):
-            text = script.string
+        for script in tree.css("script"):
+            text = script.text()
             if not text:
                 continue
 

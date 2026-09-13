@@ -6,7 +6,7 @@ import html
 import json
 from typing import Any
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.errors import ParsingError
 from ..core.extractor import Extractor
@@ -39,12 +39,12 @@ class OkruExtractor(Extractor):
         # Ok.ru's certificate chain is incomplete on some supported runtimes.
         # Keep the exception host-scoped rather than weakening the shared client.
         text = await self.context.http.get(url, ssl=False)
-        soup = BeautifulSoup(text, "html.parser")
-        options_div = soup.find("div", {"data-options": True})
+        tree = HTMLParser(text)
+        options_div = tree.css_first("div[data-options]")
         if options_div is None:
             raise ParsingError("Okru response did not contain video options")
 
-        options_raw = options_div.get("data-options", "")
+        options_raw = options_div.attributes.get("data-options", "")
         if not isinstance(options_raw, str) or not options_raw:
             raise ParsingError("Okru response contained empty video options")
 

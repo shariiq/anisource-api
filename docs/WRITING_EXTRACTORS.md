@@ -150,19 +150,26 @@ async with session.get(url, headers=headers) as resp:
     html = await resp.text(errors="replace")
 ```
 
-### Parsing HTML with BeautifulSoup
+### Parsing HTML with selectolax
 
 ```python
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
-soup = BeautifulSoup(html, "html.parser")
+tree = HTMLParser(html)
 
 # Extract data from elements
-title = soup.title.get_text() if soup.title else ""
-video_url = soup.find("source", {"src": True})["src"]
+title = tree.css_first("title")
+title_text = title.text() if title else ""
+
+video_url_node = tree.css_first("source[src]")
+video_url = video_url_node.attributes.get("src", "") if video_url_node else ""
 
 # Search in script tags
-script_content = soup.find("script", string=re.compile("playerData")).string
+script_content = ""
+for script in tree.css("script"):
+    if script.text() and "playerData" in script.text():
+        script_content = script.text()
+        break
 ```
 
 ### Processing m3u8 Playlists

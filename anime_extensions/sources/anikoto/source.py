@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ...core.errors import ExtractorError
 from ...core.metadata import SourceCapability, SourceMetadata
@@ -107,51 +107,31 @@ class Anikoto(Source):
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
         """Parse anime listing page."""
-        soup = BeautifulSoup(html, "html.parser")
-        animes = []
+        tree = HTMLParser(html)
+        animes: list[Anime] = []
 
-        for item in soup.select("div.ani.items > div.item"):
-            name_a = item.select_one("a.name")
+        for item in tree.css("div.ani.items > div.item"):
+            name_a = item.css_first("a.name")
             if not name_a:
                 continue
 
-            href = name_a.get("href", "")
-            url_path = re.sub(r"/ep-\d+$", "", href.split("?")[0])
-
-            title = name_a.get_text(strip=True)
-            jp_title = name_a.get("data-jp", "").strip()
-            final_title = jp_title or title
-
-            thumbnail = ""
-            img = item.select_one("div.poster img")
-            if img:
-                thumbnail = img.get("data-src") or img.get("src", "")
-
-            anime_id = url_path.split("/watch/")[-1] if "/watch/" in url_path else url_path
-
+            href = name_a.attributes.get("href", "")
+            url_path = _EPISODE_SUFFIX_RE.sub("", href.split("?")[0])
+            img = item.css_first("div.poster img")
             animes.append(
                 Anime(
-                    id=anime_id,
-                    title=final_title,
+                    id=url_path.split("/watch/")[-1] if "/watch/" in url_path else url_path,
+                    title=name_a.attributes.get("data-jp", "").strip() or name_a.text(strip=True),
                     url=url_path,
-                    thumbnail=thumbnail,
+                    thumbnail=(
+                        (img.attributes.get("data-src") or img.attributes.get("src", ""))
+                        if img
+                        else ""
+                    ),
                 )
             )
 
-        # Check pagination
-        pagination = soup.select_one("ul.pagination")
-        has_next = False
-        if pagination:
-            lis = pagination.select("li")
-            active_found = False
-            for li in lis:
-                if "active" in (li.get("class") or []):
-                    active_found = True
-                elif active_found:
-                    has_next = True
-                    break
-
-        return animes, has_next
+        return animes, bool(tree.css("ul.pagination > li.active ~ li"))
 
     # === Details & Episodes ===
 
@@ -160,51 +140,42 @@ class Anikoto(Source):
         clean_id = anime_id.split("#")[0].strip("/")
         anime_path = f"/watch/{clean_id}" if not clean_id.startswith("watch/") else f"/{clean_id}"
 
-        url = f"{self.base_url}{anime_path}"
-        html = await self._request(url)
-        soup = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(await self._request(f"{self.base_url}{anime_path}"))
 
         # Title - prefer Japanese title from data-jp attribute
-        title_elem = soup.select_one("h1.title, h2.title")
-        title = ""
-        if title_elem:
-            title = title_elem.get("data-jp", "").strip() or title_elem.get_text(strip=True)
+        title_elem = tree.css_first("h1.title, h2.title")
+        title = (
+            title_elem.attributes.get("data-jp", "").strip() or title_elem.text(strip=True)
+            if title_elem
+            else ""
+        )
 
         # Internal ID - get from watch-main div or rating div
-        internal_id = ""
-        watch_main = soup.select_one("div#watch-main[data-id]")
-        if watch_main:
-            internal_id = watch_main.get("data-id", "")
+        watch_main = tree.css_first("div#watch-main[data-id]")
+        internal_id = watch_main.attributes.get("data-id", "") if watch_main else ""
 
         # Thumbnail
-        thumbnail = ""
-        img = soup.select_one("div.poster img, img.thumbnail")
-        if img:
-            thumbnail = img.get("data-src") or img.get("src", "")
+        img = tree.css_first("div.poster img, img.thumbnail")
+        thumbnail = (img.attributes.get("data-src") or img.attributes.get("src", "")) if img else ""
 
         # Parse metadata from bmeta div
-        genres = []
-        studios = []
+        genres: list[str] = []
+        studios: list[str] = []
         status_text = ""
-        score = None
+        score: float | None = None
 
-        bmeta = soup.select_one("div.bmeta")
-        if bmeta:
-            for div in bmeta.select("div.meta > div"):
-                text = div.get_text(" ", strip=True)
-                if text.startswith("Genres:") or "Genres:" in text:
-                    genres = [a.get_text(strip=True) for a in div.select("span a")]
-                elif text.startswith("Studios:") or "Studios:" in text:
-                    studios = [a.get_text(strip=True) for a in div.select("span a")]
-                elif text.startswith("Status:") or "Status:" in text:
-                    span = div.select_one("span")
-                    if span:
-                        status_text = span.get_text(strip=True).lower()
-                elif text.startswith("MAL:") or "MAL:" in text or "Scores" in text:
-                    span = div.select_one("span")
-                    if span:
-                        with contextlib.suppress(ValueError):
-                            score = float(span.get_text(strip=True).split()[0])
+        if bmeta := tree.css_first("div.bmeta"):
+            for div in bmeta.css("div.meta > div"):
+                text = div.text(separator=" ", strip=True)
+                if "Genres:" in text:
+                    genres = [a.text(strip=True) for a in div.css("span a")]
+                elif "Studios:" in text:
+                    studios = [a.text(strip=True) for a in div.css("span a")]
+                elif "Status:" in text and (span := div.css_first("span")):
+                    status_text = span.text(strip=True).lower()
+                elif ("MAL:" in text or "Scores" in text) and (span := div.css_first("span")):
+                    with contextlib.suppress(ValueError):
+                        score = float(span.text(strip=True).split()[0])
 
         # Determine status
         anime_status = "unknown"
@@ -214,19 +185,19 @@ class Anikoto(Source):
             anime_status = "completed"
 
         # Description
-        synopsis_elem = soup.select_one("div.synopsis div.content")
-        description = synopsis_elem.get_text(strip=True) if synopsis_elem else ""
+        synopsis_elem = tree.css_first("div.synopsis div.content")
+        description = synopsis_elem.text(strip=True) if synopsis_elem else ""
 
         # Alternative titles
-        alt_titles = []
-        if title_elem and title_elem.get("data-jp"):
-            alt_titles.append(title_elem.get("data-jp").strip())
+        alt_titles = (
+            [title_elem.attributes.get("data-jp", "").strip()]
+            if title_elem and title_elem.attributes.get("data-jp")
+            else []
+        )
 
-        alt_container = soup.select_one("div.names.font-italic")
-        if alt_container:
-            for name in alt_container.get_text(strip=True).split(";"):
-                clean = name.strip()
-                if clean and clean not in alt_titles:
+        if alt_container := tree.css_first("div.names.font-italic"):
+            for name in alt_container.text(strip=True).split(";"):
+                if (clean := name.strip()) and clean not in alt_titles:
                     alt_titles.append(clean)
 
         return Anime(
@@ -272,37 +243,42 @@ class Anikoto(Source):
         if not html_result:
             return []
 
-        soup = BeautifulSoup(html_result, "html.parser")
-        episodes = []
+        tree = HTMLParser(html_result)
+        episodes: list[Episode] = []
         clean_path = _EPISODE_SUFFIX_RE.sub("", anime_path)
 
-        for a in soup.select("div.episodes ul > li > a"):
-            ep_num = a.get("data-num", "")
-            ep_ids = a.get("data-ids", "")
+        for a in tree.css("div.episodes ul > li > a"):
+            ep_num = a.attributes.get("data-num", "")
+            ep_ids = a.attributes.get("data-ids", "")
             if not ep_num and not ep_ids:
                 continue
 
             # Title
             parent = a.parent
-            title_span = parent.select_one("span.d-title") if parent else None
-            title = title_span.get_text(strip=True) if title_span else ""
+            title_span = parent.css_first("span.d-title") if parent else None
+            title = title_span.text(strip=True) if title_span else ""
 
-            if not title and parent and parent.get("title"):
-                title = parent.get("title").split("Release:")[0].split("Softsub")[0].strip()
+            if not title and parent and parent.attributes.get("title"):
+                title = (
+                    parent.attributes.get("title", "")
+                    .split("Release:")[0]
+                    .split("Softsub")[0]
+                    .strip()
+                )
 
             if not title:
                 title = f"Episode {ep_num}"
 
             # Sub/Dub
-            has_sub = a.get("data-sub") == "1"
-            has_dub = a.get("data-dub") == "1"
+            has_sub = a.attributes.get("data-sub") == "1"
+            has_dub = a.attributes.get("data-dub") == "1"
 
             # Filler
-            is_filler = "filler" in (a.get("class") or [])
+            is_filler = "filler" in a.attributes.get("class", "").split()
 
             # Release date
             released_at = None
-            timestamp = a.get("data-timestamp", "")
+            timestamp = a.attributes.get("data-timestamp", "")
             if timestamp and timestamp.isdigit():
                 with contextlib.suppress(ValueError, OSError):
                     released_at = datetime.fromtimestamp(int(timestamp))
@@ -363,21 +339,21 @@ class Anikoto(Source):
         if not html_result:
             return []
 
-        soup = BeautifulSoup(html_result, "html.parser")
-        servers = []
+        tree = HTMLParser(html_result)
+        servers: list[Server] = []
 
-        for type_div in soup.select("div.servers > div.type"):
+        for type_div in tree.css("div.servers > div.type"):
             # Get video type
-            label = type_div.select_one("label")
-            label_text = label.get_text(strip=True).lower() if label else ""
+            label = type_div.css_first("label")
+            label_text = label.text(strip=True).lower() if label else ""
             video_type = self._resolve_video_type(label_text)
 
-            for li in type_div.select("li"):
-                if "download-icon" in (li.get("class") or []):
+            for li in type_div.css("li"):
+                if "download-icon" in li.attributes.get("class", "").split():
                     continue
 
-                server_id = li.get("data-link-id", "")
-                server_name = li.get_text(strip=True)
+                server_id = li.attributes.get("data-link-id", "")
+                server_name = li.text(strip=True)
 
                 if server_id and server_name:
                     servers.append(

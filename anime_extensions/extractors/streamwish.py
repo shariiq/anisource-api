@@ -7,7 +7,7 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.errors import ParsingError
 from ..core.extractor import Extractor
@@ -66,12 +66,12 @@ class StreamWishExtractor(Extractor):
         }
 
         text = await self.context.http.get(url, headers=headers)
-        soup = BeautifulSoup(text, "html.parser")
+        tree = HTMLParser(text)
 
         # Check for gateway loading page with external main.js
         # This indicates StreamWish's new architecture where video data
         # is loaded via deobfuscated external JavaScript
-        script_element = soup.find("script", src=re.compile(r"/main\.js\?v="))
+        script_element = tree.css_first("script[src*='/main.js?v=']")
         if script_element:
             # Gateway page detected - would require external JS deobfuscation
             # and domain resolution logic from main.js server arrays
@@ -80,11 +80,11 @@ class StreamWishExtractor(Extractor):
             )
 
         # Standard extraction: search for m3u8 in inline scripts
-        scripts = soup.find_all("script")
+        scripts = tree.css("script")
 
         script_content = ""
         for script in scripts:
-            content = script.string or script.get_text() or ""
+            content = script.text() or ""
             if "m3u8" in content or "eval(function(p,a,c" in content:
                 if Unpacker.is_packed(content):
                     script_content = Unpacker.unpack(content)

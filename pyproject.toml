@@ -26,10 +26,10 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.14.3",
-    "beautifulsoup4>=4.15.0",
     "cryptography>=50.0.1",
     "fastapi>=0.141.1",
     "m3u8>=6.0.0",
+    "selectolax>=0.3.0",
     "pydantic>=2.13.5",
     "uvicorn[standard]>=0.52.4",
     "uvloop>=0.21.0; sys_platform != 'win32'",

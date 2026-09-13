@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from ...core.runtime import ExtensionContext
 
 log = logging.getLogger(__name__)
+_EPISODE_SUFFIX_RE = re.compile(r"/(?:ep-\d+|episode/\d+)$")
 
 
 class AniWaves(Source):
@@ -125,7 +126,7 @@ class AniWaves(Source):
             name_a = item.select_one("a.name, a.d-title")
             if not name_a:
                 continue
-            url_path = re.sub(r"/(?:ep-\d+|episode/\d+)$", "", name_a.get("href", "").split("?")[0])
+            url_path = _EPISODE_SUFFIX_RE.sub("", name_a.get("href", "").split("?")[0])
             img = item.select_one("div.poster img, img")
             animes.append(
                 Anime(
@@ -217,6 +218,7 @@ class AniWaves(Source):
         if not isinstance(data, dict) or not (html_result := data.get("result", "")):
             return []
         episodes: list[Episode] = []
+        path = _EPISODE_SUFFIX_RE.sub("", anime_path)
         for anchor in BeautifulSoup(html_result, "html.parser").select("div.episodes ul li a"):
             ep_num, ep_ids = anchor.get("data-num", ""), anchor.get("data-ids", "")
             if not ep_num and not ep_ids:
@@ -230,7 +232,6 @@ class AniWaves(Source):
                 ep_number = float(ep_num)
             except ValueError:
                 ep_number = 0.0
-            path = re.sub(r"/(?:ep-\d+|episode/\d+)$", "", anime_path)
             episodes.append(
                 Episode(
                     id=f"{ep_ids}&epurl={path}/episode/{ep_num}",

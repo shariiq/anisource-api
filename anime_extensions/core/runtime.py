@@ -54,6 +54,11 @@ class ExtensionRuntime:
         self.sources = source_registry or SourceRegistry()
         self.extractors = extractor_registry or ExtractorRegistry()
         self._disabled_sources = disabled_sources or set()
+        self._context = ExtensionContext(
+            http=self.http,
+            extractors=self.extractors,
+        )
+        self._source_instances: dict[str, Source] = {}
 
         if load_builtins:
             self._register_builtins()
@@ -101,17 +106,21 @@ class ExtensionRuntime:
     @property
     def context(self) -> ExtensionContext:
         """Build the injection context for sources/extractors."""
-        return ExtensionContext(
-            http=self.http,
-            extractors=self.extractors,
-        )
+        return self._context
 
     def get_source(self, id_: str) -> Source | None:
-        """Instantiate a source by ID with its context bound."""
+        """Instantiate or retrieve a cached source by ID with its context bound."""
+        source = self._source_instances.get(id_)
+        if source is not None:
+            return source
+
         cls = self.sources.get(id_)
         if not cls:
             return None
-        return cls(context=self.context)
+
+        source = cls(context=self.context)
+        self._source_instances[id_] = source
+        return source
 
     def resolve_extractor(self, url: str) -> Extractor:
         """Resolve a URL to a concrete extractor and instantiate it."""

@@ -99,6 +99,23 @@ async def test_get_details_extracts_internal_id_and_metadata(source: Anikoto):
 
 
 @pytest.mark.asyncio
+async def test_get_details_ongoing_status(source: Anikoto):
+    """Test ongoing status parsing in Anikoto details."""
+    ongoing_html = """
+    <h2 class="title">Ongoing Show</h2>
+    <div id="watch-main" data-id="internal-123"></div>
+    <div class="bmeta">
+      <div class="meta">
+        <div>Status: <span>Currently Airing</span></div>
+      </div>
+    </div>
+    """
+    source._request = AsyncMock(return_value=ongoing_html)
+    anime = await source.get_details("ongoing-show")
+    assert anime.status == "ongoing"
+
+
+@pytest.mark.asyncio
 async def test_get_episodes_reverse_and_parse_timestamps(source: Anikoto):
     """Test episodes reversed, flags parsed, and IDs built."""
     source._get_json = AsyncMock(return_value={"result": EPISODES_HTML})

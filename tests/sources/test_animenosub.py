@@ -57,6 +57,27 @@ async def test_details_and_episodes(source: AnimeNoSub):
 
 
 @pytest.mark.asyncio
+async def test_details_plain_text_metadata(source: AnimeNoSub):
+    html = """
+    <h1 class="entry-title">Plain Show</h1>
+    <div class="thumb"><img src="https://img/show.jpg"></div>
+    <div class="info-content">
+      <div class="spe">
+        <span><b>Status:</b> Ongoing</span>
+        <span><b>Studio:</b> Studio Plain</span>
+        <span><b>Fansub:</b> Plain Sub</span>
+      </div>
+    </div>
+    """
+    source.context.http.get = AsyncMock(return_value=html)
+    anime = await source.get_details("anime/plain-show")
+    assert anime.title == "Plain Show"
+    assert anime.status == "ongoing"
+    assert anime.studios == ["Studio Plain"]
+    assert anime.producers == ["Plain Sub"]
+
+
+@pytest.mark.asyncio
 async def test_servers_and_stream_delegation(source: AnimeNoSub):
     encoded = base64.b64encode(b'<iframe src="https://vidmoly.biz/embed-a"></iframe>').decode()
     source.context.http.get = AsyncMock(

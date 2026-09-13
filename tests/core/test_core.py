@@ -158,36 +158,33 @@ def test_source_registry_is_generic():
     assert MockSource in registry.list_all()
 
 
-def test_builtin_source_catalogue_marks_mkissa_disabled():
-    """Verify built-in source availability policy belongs to the catalogue."""
+def test_builtin_source_catalogue():
+    """Verify built-in sources are properly defined in the catalogue."""
     from anime_extensions.sources import BUILTIN_SOURCES
 
     builtins = {item.cls.metadata.id: item for item in BUILTIN_SOURCES}
+    assert "aniwaves" in builtins
+    assert "anikoto" in builtins
+    assert all(item.enabled for item in builtins.values())
 
-    assert builtins["mkissa"].enabled is False
-    assert all(item.enabled for id_, item in builtins.items() if id_ != "mkissa")
 
-
-def test_runtime_skips_disabled_builtin_sources():
-    """Verify disabled source catalogue entries are not registered."""
+def test_runtime_registers_builtin_sources():
+    """Verify built-in source catalogue entries are registered."""
     runtime = ExtensionRuntime()
 
-    assert runtime.sources.get("mkissa") is None
     assert {source.metadata.id for source in runtime.sources.list_all()} == {
         "aniwaves",
         "anikoto",
-        "animenosub",
     }
     assert len(runtime.extractors) == 13
 
 
 def test_runtime_accepts_runtime_source_exclusions():
     """Verify callers can exclude enabled built-ins at runtime."""
-    runtime = ExtensionRuntime(disabled_sources={"aniwaves", "anikoto"})
+    runtime = ExtensionRuntime(disabled_sources={"aniwaves"})
 
     assert runtime.sources.get("aniwaves") is None
-    assert runtime.sources.get("anikoto") is None
-    assert runtime.sources.get("animenosub") is not None
+    assert runtime.sources.get("anikoto") is not None
 
 
 @pytest.mark.asyncio

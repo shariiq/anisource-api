@@ -68,7 +68,7 @@ The SDK must not depend on FastAPI.
 
 - `anime_extensions/sources/`
   - scraper plugins
-  - built-in catalogue includes AniWaves, Anikoto, AnimeNoSub, and disabled MKissa
+  - built-in catalogue includes AniWaves and Anikoto
 
 - `anime_extensions/extractors/`
   - video extractors
@@ -206,8 +206,6 @@ Every source implements the following contract:
 
 - `aniwaves`
 - `anikoto`
-- `animenosub`
-- `mkissa` is present in the catalogue but disabled by default because of upstream anti-bot/CAPTCHA behavior; enable only deliberately in `anime_extensions/sources/__init__.py`.
 
 ---
 

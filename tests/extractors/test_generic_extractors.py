@@ -1,4 +1,4 @@
-"""Tests for AnimeNoSub extractors."""
+"""Tests for generic video extractors."""
 
 import base64
 import json
@@ -34,9 +34,7 @@ async def test_moon_extractor(mock_context):
 
     with patch("anime_extensions.extractors.moon.parse_m3u8_streams") as mock_parse:
         mock_parse.return_value = [MagicMock()]
-        streams = await extractor.extract(
-            "https://moon/video/123", site_url="https://animenosub.to"
-        )
+        streams = await extractor.extract("https://moon/video/123", site_url="https://example.com")
 
         assert streams
         mock_context.http.get_json.assert_called_once()
@@ -73,9 +71,7 @@ async def test_moon_extractor_encrypted_payload(mock_context):
 
     with patch("anime_extensions.extractors.moon.parse_m3u8_streams") as mock_parse:
         mock_parse.return_value = [MagicMock()]
-        streams = await extractor.extract(
-            "https://moon/video/123", site_url="https://animenosub.to"
-        )
+        streams = await extractor.extract("https://moon/video/123", site_url="https://example.com")
 
         assert streams
         args, kwargs = mock_context.http.get.call_args

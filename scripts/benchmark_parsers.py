@@ -42,23 +42,6 @@ FIXTURES = {
     <div class="names font-italic">Sousou no Frieren; Beyond Journey's End; Frieren: Remnants of the Past</div>
     """
     * 10,
-    "AnimeNoSub Details": """
-    <h1 class="entry-title">Sousou no Frieren</h1>
-    <div class="thumb"><img src="https://img.example/frieren.jpg"></div>
-    <div class="info-content">
-      <div class="genxed"><a>Fantasy</a><a>Drama</a><a>Magic</a></div>
-      <div class="spe">
-        <span><b>Status:</b> Completed</span>
-        <span><b>Studio:</b> <a>Madhouse</a></span>
-        <span><b>Fansub:</b> <a>SubsPlease</a></span>
-        <span><b>Type:</b> TV</span>
-        <span><b>Duration:</b> 24 min</span>
-      </div>
-    </div>
-    <div class="entry-content" itemprop="description">Detailed description text for the anime series goes here.</div>
-    <div class="alter">Frieren: Beyond Journey's End</div>
-    """
-    * 10,
     "Server Fragment": """
     <div class="servers">
       <div class="type" data-type="sub"><label>Sub</label>

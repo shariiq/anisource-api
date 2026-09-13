@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-import base64
 import contextlib
-import json
 import logging
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from bs4 import BeautifulSoup
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from ...core.errors import ExtractorError, ParsingError
+from ...core.errors import ExtractorError
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.source import Source
-from ...models import Anime, Episode, Page, Server, Stream, Subtitle
+from ...models import Anime, Episode, Page, Server, Stream
 from ...utils.crypto import vrf_encrypt
-from ...utils.m3u8 import parse_m3u8_streams
 
 if TYPE_CHECKING:
     from ...core.runtime import ExtensionContext
@@ -437,22 +432,28 @@ class Anikoto(Source):
         if not embed_url:
             return []
 
-        if "mewcdn.online/player/plyr.php" in embed_url:
-            return await self._extract_from_mewcdn(embed_url, server_id)
         if embed_url.endswith(".m3u8") or (".m3u8" in embed_url and "/stream/" not in embed_url):
-            return await self._extract_direct_m3u8(embed_url, server_id)
+            return [
+                Stream(
+                    url=embed_url,
+                    quality="auto",
+                    headers={"Referer": f"{self.base_url}/"},
+                    is_hls=True,
+                )
+            ]
 
         try:
             extractor_cls = self.context.extractors.resolve(embed_url)
             extractor = extractor_cls(self.context)
         except ExtractorError:
-            return await self._extract_from_player(embed_url, server_id, ep_url)
-
-        try:
-            return await extractor.extract(embed_url, label_prefix="")
-        except Exception as error:
-            log.warning("Anikoto stream extraction failed with %s", type(error).__name__)
+            log.warning(f"Anikoto: Unable to resolve extractor for {embed_url}")
             return []
+
+        return await extractor.extract(
+            embed_url,
+            quality_prefix="",
+            external_subs=[],
+        )
 
     async def _get_embed_link(self, server_id: str, ep_url: str) -> str | None:
         """Get embed URL from server ID."""
@@ -478,312 +479,6 @@ class Anikoto(Source):
         if isinstance(result, dict):
             return result.get("url")
         return None
-
-    async def _extract_from_player(
-        self,
-        embed_url: str,
-        server_id: str,
-        ep_url: str,
-    ) -> list[Stream]:
-        """Extract streams from a generic player page."""
-        from urllib.parse import urlparse
-
-        host = urlparse(embed_url).netloc
-        headers = {
-            "Referer": f"{self.base_url}/",
-        }
-
-        body = await self._request(embed_url, headers=headers)
-        if not body:
-            return []
-
-        # Try to find data-id for API extraction
-        data_id_match = re.search(r'data-id="([^"]+)"', body)
-        if data_id_match:
-            data_id = data_id_match.group(1)
-            return await self._fetch_sources_from_api(data_id, host, embed_url, server_id)
-
-        # Try to find iframe src
-        iframe_match = re.search(r'<iframe[^>]+src="([^"]+)"', body)
-        if iframe_match:
-            iframe_src = self._resolve_url(iframe_match.group(1), embed_url)
-            return await self._extract_from_player(iframe_src, server_id, ep_url)
-
-        # Try to find direct m3u8
-        m3u8_match = re.search(r'https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*', body)
-        if m3u8_match:
-            return await self._extract_direct_m3u8(
-                m3u8_match.group(0), server_id, f"https://{host}/"
-            )
-
-        # Try JS variable patterns
-        js_m3u8_match = re.search(
-            r"""(?:var|let|const)\s+\w+\s*=\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']"""
-            r"""|(?:file|source|url|src)\s*[:=]\s*["']([^"']*(?:\.m3u8|/stream/)[^"']*)["']""",
-            body,
-        )
-        if js_m3u8_match:
-            js_url = js_m3u8_match.group(1) or js_m3u8_match.group(2)
-            if js_url:
-                resolved_url = self._resolve_url(js_url, embed_url)
-                if ".m3u8" in resolved_url or "/stream/" in resolved_url:
-                    try:
-                        return await self._fetch_sources_from_page(
-                            resolved_url, server_id, f"https://{host}/"
-                        )
-                    except Exception:
-                        return await self._extract_direct_m3u8(
-                            resolved_url, server_id, f"https://{host}/"
-                        )
-
-        return []
-
-    async def _fetch_sources_from_api(
-        self,
-        data_id: str,
-        host: str,
-        embed_url: str,
-        server_id: str,
-    ) -> list[Stream]:
-        """Fetch and decrypt sources from the MegaPlay API."""
-        # Determine stream type from URL path
-        path_segments = embed_url.rstrip("/").split("/")
-        stream_type = path_segments[-1] if path_segments[-1] in ("sub", "dub", "hsub") else ""
-
-        api_headers = {
-            "Accept": "*/*",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": embed_url,
-            "Origin": f"https://{host}",
-        }
-
-        data = None
-        for endpoint in ("getSources", "getSourcesNew"):
-            api_url = (
-                f"https://{host}/stream/{endpoint}"
-                f"?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
-            )
-            try:
-                resp_data = await self._get_json(api_url, headers=api_headers)
-            except Exception:
-                continue
-            if not isinstance(resp_data, dict):
-                continue
-            if resp_data.get("enc"):
-                decrypted = self._decrypt_megaplay_sources(resp_data["enc"])
-                if decrypted:
-                    resp_data = {**resp_data, **decrypted}
-            source_value = resp_data.get("sources", resp_data.get("file"))
-            if self._has_source_url(source_value):
-                data = resp_data
-                break
-
-        if not data:
-            return []
-
-        source_value = data.get("sources", data.get("file"))
-        if isinstance(source_value, dict):
-            m3u8_url = source_value.get("file", "")
-        elif isinstance(source_value, str):
-            m3u8_url = source_value
-        elif isinstance(source_value, list):
-            m3u8_url = source_value[0] if source_value else ""
-        else:
-            m3u8_url = ""
-
-        if not isinstance(m3u8_url, str) or not m3u8_url.startswith("http"):
-            return []
-
-        subtitles = []
-        for track in data.get("tracks", []) or []:
-            if isinstance(track, dict) and track.get("kind") == "captions":
-                track_url = track.get("file", "")
-                if isinstance(track_url, str) and track_url.startswith("http"):
-                    subtitles.append(
-                        Subtitle(
-                            url=track_url,
-                            label=track.get("label", ""),
-                            language=track.get("label", ""),
-                        )
-                    )
-
-        return await self._parse_m3u8(m3u8_url, server_id, f"https://{host}/", subtitles)
-
-    @staticmethod
-    def _has_source_url(sources: Any) -> bool:
-        """Return whether an API source value contains a usable URL."""
-        if isinstance(sources, dict):
-            return isinstance(sources.get("file"), str) and sources["file"].startswith("http")
-        if isinstance(sources, str):
-            return sources.startswith("http")
-        if isinstance(sources, list):
-            return bool(sources) and isinstance(sources[0], str) and sources[0].startswith("http")
-        return False
-
-    @staticmethod
-    def _decrypt_megaplay_sources(encoded: Any) -> dict[str, Any] | None:
-        """Decrypt MegaPlay's URL-safe Base64 AES-CBC response payload."""
-        if not isinstance(encoded, str) or not encoded:
-            return None
-        try:
-            encoded = encoded.replace("-", "+").replace("_", "/")
-            ciphertext = base64.b64decode(encoded + "=" * (-len(encoded) % 4))
-            key = b"i?LMTAx0Q6,:}50U".ljust(32, b"\0")[:32]
-            iv = b"W0;27ToaUpl_P%'c"
-            decryptor = Cipher(
-                algorithms.AES(key), modes.CBC(iv), backend=default_backend()
-            ).decryptor()
-            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
-            padding = plaintext[-1]
-            if 1 <= padding <= 16 and plaintext.endswith(bytes([padding]) * padding):
-                plaintext = plaintext[:-padding]
-            payload = json.loads(plaintext.decode("utf-8"))
-        except ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError:
-            return None
-        return payload if isinstance(payload, dict) else {"sources": payload}
-
-    async def _fetch_sources_from_page(
-        self,
-        url: str,
-        server_id: str,
-        referer: str,
-    ) -> list[Stream]:
-        """Fetch sources from a page that may contain m3u8."""
-        headers = {"Referer": referer}
-        body = await self._request(url, headers=headers)
-
-        if not body:
-            raise Exception("Page fetch failed")
-
-        # Check if it's directly an m3u8
-        if body.lstrip().startswith("#EXTM3U"):
-            return await self._extract_direct_m3u8(url, server_id, referer)
-
-        # Try to find m3u8 in body
-        m3u8_match = re.search(r'https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*', body)
-        if m3u8_match:
-            return await self._extract_direct_m3u8(m3u8_match.group(0), server_id, referer)
-
-        raise Exception("No m3u8 found in page")
-
-    async def _extract_direct_m3u8(
-        self,
-        m3u8_url: str,
-        server_id: str,
-        referer: str,
-    ) -> list[Stream]:
-        """Extract streams from a direct m3u8 URL."""
-        return await self._parse_m3u8(m3u8_url, server_id, referer, [])
-
-    async def _extract_from_mewcdn(
-        self,
-        embed_url: str,
-        server_id: str,
-    ) -> list[Stream]:
-        """Extract from Mewcdn player."""
-        # Extract fragment from URL
-        fragment = ""
-        if "#" in embed_url:
-            fragment = embed_url.split("#", 1)[1]
-
-        if not fragment:
-            return []
-
-        # Decode fragment from base64
-        try:
-            raw_m3u8 = base64.b64decode(fragment).decode("utf-8").strip()
-        except Exception:
-            return []
-
-        if not raw_m3u8.startswith("http"):
-            return []
-
-        # Fetch page to get host map
-        headers = {"Referer": f"{self.base_url}/"}
-
-        try:
-            body = await self._request(embed_url, headers=headers)
-        except Exception:
-            body = ""
-
-        host_map = {}
-        if body:
-            host_map = self._parse_host_map(body)
-
-        # Apply host map
-        m3u8_url = self._apply_host_map(raw_m3u8, host_map)
-
-        return await self._parse_m3u8(m3u8_url, server_id, "https://mewcdn.online/", [])
-
-    def _parse_host_map(self, html: str) -> dict[str, str]:
-        """Parse HOST_MAP from player page."""
-        map_match = re.search(r"var HOST_MAP\s*=\s*\{([^}]+)\}", html)
-        if not map_match:
-            return {}
-
-        entries = re.findall(r"'([^']+)'\s*:\s*'([^']+)'", map_match.group(1))
-        return dict(entries)
-
-    def _apply_host_map(self, url: str, host_map: dict[str, str]) -> str:
-        """Apply host map to URL."""
-        result = url
-        for origin, proxy in host_map.items():
-            if origin in result:
-                result = result.replace(origin, proxy)
-                break
-        return result
-
-    async def _parse_m3u8(
-        self,
-        m3u8_url: str,
-        server_id: str,
-        referer: str,
-        subtitles: list[Subtitle],
-    ) -> list[Stream]:
-        """Fetch and parse an HLS playlist with host-required request headers."""
-        from urllib.parse import urlparse
-
-        parsed_ref = urlparse(referer)
-        origin = f"https://{parsed_ref.netloc}" if parsed_ref.netloc else None
-        headers = {"Referer": referer}
-        if origin:
-            headers["Origin"] = origin
-
-        try:
-            body = await self._request(m3u8_url, headers=headers)
-        except Exception:
-            # If we cannot fetch the playlist (e.g., 403 Forbidden), return the master URL as a fallback
-            # This preserves headers and allows the extractor to work with upstream protections
-            label = "auto"
-            return [
-                Stream(
-                    url=m3u8_url,
-                    quality=label,
-                    headers=headers,
-                    subtitles=subtitles,
-                    is_hls=True,
-                )
-            ]
-
-        if not body.lstrip().startswith("#EXTM3U"):
-            raise ParsingError(f"Anikoto: expected an HLS playlist from {m3u8_url}")
-
-        return parse_m3u8_streams(
-            body,
-            m3u8_url,
-            referer=referer,
-            subtitles=subtitles,
-            default_headers=headers,
-        )
-
-    def _resolve_url(self, url: str, base: str) -> str:
-        """Resolve relative URL against base."""
-        if url.startswith("http"):
-            return url
-
-        from urllib.parse import urljoin
-
-        return urljoin(base, url)
 
     def _resolve_video_type(self, label_text: str) -> str:
         """Resolve video type from label."""

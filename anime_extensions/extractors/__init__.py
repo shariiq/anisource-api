@@ -8,6 +8,7 @@ from .byse import ByseExtractor
 from .dood import DoodExtractor
 from .echovideo import EchoVideoExtractor
 from .gogo import GogoStreamExtractor
+from .megaplay import MegaPlayExtractor
 from .moon import MoonExtractor
 from .mp4upload import Mp4UploadExtractor
 from .okru import OkruExtractor
@@ -26,6 +27,7 @@ BUILTIN_EXTRACTORS: tuple[tuple[type[Extractor], str, int], ...] = (
     (DoodExtractor, r"dood|myvidplay|ds2play|doodstream", 0),
     (EchoVideoExtractor, r"vidplay|mycloud|datsav|dghg|echovideo", 0),
     (GogoStreamExtractor, r"gogo|vidstreaming|playgo1\.cc|playtaku|vidcloud", 0),
+    (MegaPlayExtractor, r"megaplay", 0),
     (MoonExtractor, r"bysesayeveum|fmoon|filemoon|moonembed", 0),
     (Mp4UploadExtractor, r"mp4upload\.com", 0),
     (OkruExtractor, r"ok\.ru|okru|odnoklassniki\.ru", 0),
@@ -46,6 +48,7 @@ __all__ = [
     "DoodExtractor",
     "EchoVideoExtractor",
     "GogoStreamExtractor",
+    "MegaPlayExtractor",
     "MoonExtractor",
     "Mp4UploadExtractor",
     "OkruExtractor",

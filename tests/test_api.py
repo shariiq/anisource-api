@@ -179,6 +179,7 @@ async def app():
     finally:
         await runtime.close()
         app.state.cache.clear()
+        app.state.hls_proxy_registry.clear()
 
 
 @pytest.mark.asyncio

@@ -26,9 +26,10 @@ from anime_extensions.exceptions import (
 )
 
 from .config import APISettings, get_settings
-from .routers import anime, health, sources, streams
+from .routers import anime, health, proxy, sources, streams
 from .schemas import ErrorDetail, ErrorResponse
 from .services.cache import AsyncTTLCache
+from .services.hls_proxy import HlsProxyRegistry
 
 # Configure structured logging
 logging.basicConfig(
@@ -57,14 +58,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     runtime = ExtensionRuntime()
     await runtime.start()
     cache = AsyncTTLCache(max_items=1000)
+    hls_proxy_registry = HlsProxyRegistry()
     app.state.runtime = runtime
     app.state.cache = cache
+    app.state.hls_proxy_registry = hls_proxy_registry
     try:
         yield
     finally:
         log.info("Shutting down Anime Extensions API...")
         await runtime.close()
         cache.clear()
+        hls_proxy_registry.clear()
 
 
 def create_app(settings: APISettings | None = None) -> FastAPI:
@@ -81,6 +85,7 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
         redoc_url="/redoc",
         openapi_url="/openapi.json",
     )
+    app.state.hls_proxy_registry = HlsProxyRegistry()
 
     # ==========================================================================
     # Middleware
@@ -231,6 +236,7 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     api_v1.include_router(sources.router)
     api_v1.include_router(anime.router)
     api_v1.include_router(streams.router)
+    api_v1.include_router(proxy.router)
 
     app.include_router(api_v1)
 

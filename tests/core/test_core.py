@@ -164,7 +164,7 @@ def test_runtime_skips_disabled_builtin_sources():
         "anikoto",
         "animenosub",
     }
-    assert len(runtime.extractors) == 12
+    assert len(runtime.extractors) == 13
 
 
 def test_runtime_accepts_runtime_source_exclusions():

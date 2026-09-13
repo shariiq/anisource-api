@@ -15,7 +15,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Typed domain models**: Sources return consistent anime, episode, server, stream, and subtitle models.
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
 - **Stampede-resistant caching**: `AsyncTTLCache.get_or_set` coalesces concurrent cache misses for the same key into one upstream request.
-- **Active sources**: AniWaves, Anikoto, and AnimeNoSub (MKissa quarantined due to upstream anti-bot/CAPTCHA).
+- **Active sources**: AniWaves and Anikoto.
 - **Built-in extractors**: Byse, DoodStream, EchoVideo, GogoStream, MegaPlay, Moon/Filemoon, Mp4Upload, Okru, StreamWish, Streamlare, VidMoly, Vtube, and WolfStream.
 
 ## Architecture

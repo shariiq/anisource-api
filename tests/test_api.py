@@ -216,7 +216,7 @@ async def test_api_production_unmocked_e2e():
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
     assert sources.status_code == 200
-    assert sources.json()["count"] == 3
+    assert sources.json()["count"] == 2
 
 
 @pytest.mark.asyncio
@@ -237,6 +237,26 @@ async def test_health_check_endpoints(app):
         res_v1 = await client.get("/api/v1/health")
         assert res_v1.status_code == 200
         assert res_v1.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_frontend_static_routes_preserve_api_endpoints(app):
+    """Serve the packaged UI without shadowing application routes."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        root = await client.get("/")
+        static_asset = await client.get("/anisource.html")
+        docs = await client.get("/docs")
+        sources = await client.get("/api/v1/sources")
+
+    assert root.status_code == 200
+    assert root.headers["content-type"].startswith("text/html")
+    assert "<title>AniSource — Anime Discovery</title>" in root.text
+    assert static_asset.status_code == 200
+    assert static_asset.headers["content-type"].startswith("text/html")
+    assert "<title>AniSource — Anime Discovery</title>" in static_asset.text
+    assert docs.status_code == 200
+    assert sources.status_code == 200
 
 
 @pytest.mark.asyncio

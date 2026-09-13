@@ -6,11 +6,15 @@ import logging
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from anime_extensions.core import ExtensionRuntime, SourceNotFoundError
 from anime_extensions.exceptions import (
@@ -248,6 +252,23 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     api_v1.include_router(proxy.router)
 
     app.include_router(api_v1)
+
+    # ==========================================================================
+    # Static Assets (Frontend)
+    # ==========================================================================
+
+    class UIStaticFiles(StaticFiles):
+        """Static file server that serves anisource.html as the root application index."""
+
+        async def get_response(self, path: str, scope: Scope) -> Response:
+            if path in ("", ".", "/"):
+                path = "anisource.html"
+            return await super().get_response(path, scope)
+
+    static_dir = Path(__file__).resolve().parent / "static"
+    if static_dir.exists():
+        # Mounted last so API endpoints are never shadowed
+        app.mount("/", UIStaticFiles(directory=static_dir, html=False), name="static")
 
     return app
 

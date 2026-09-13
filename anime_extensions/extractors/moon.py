@@ -32,7 +32,7 @@ class MoonExtractor(Extractor):
         **kwargs: Any,
     ) -> list[Stream]:
         session = self.context.http
-        site_url = kwargs.get("site_url", "https://animenosub.to")
+        site_url = kwargs.get("site_url", "https://filemoon.sx")
         prefix = kwargs.get("label_prefix", "")
 
         user_agent = (

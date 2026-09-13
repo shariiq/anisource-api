@@ -9,9 +9,7 @@ if TYPE_CHECKING:
     from anime_extensions.core.source import Source
 
 from .anikoto import Anikoto
-from .animenosub import AnimeNoSub
 from .aniwaves import AniWaves
-from .mkissa import MKissa
 
 
 @dataclass(frozen=True)
@@ -26,8 +24,6 @@ class BuiltinSource:
 BUILTIN_SOURCES: tuple[BuiltinSource, ...] = (
     BuiltinSource(AniWaves),
     BuiltinSource(Anikoto),
-    BuiltinSource(AnimeNoSub),
-    BuiltinSource(MKissa, enabled=False),
 )
 
-__all__ = ["Anikoto", "AnimeNoSub", "AniWaves", "MKissa", "BUILTIN_SOURCES", "BuiltinSource"]
+__all__ = ["Anikoto", "AniWaves", "BUILTIN_SOURCES", "BuiltinSource"]

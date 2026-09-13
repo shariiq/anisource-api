@@ -52,6 +52,7 @@ export default function Watch() {
   const [selectedServerId, setSelectedServerId] = createSignal("");
   const [selectedStream, setSelectedStream] = createSignal<StreamItem | null>(null);
   const [audioPreference, setAudioPreference] = createSignal<AudioPreference>("sub");
+  const [episodeFilter, setEpisodeFilter] = createSignal("");
   const [error, setError] = createSignal("");
   const [isResolving, setIsResolving] = createSignal(false);
   const [isLoadingStreams, setIsLoadingStreams] = createSignal(false);
@@ -66,6 +67,13 @@ export default function Watch() {
     staleTime: 1000 * 60 * 5,
   }));
   const episodes = () => episodeQuery.data ?? [];
+  const visibleEpisodes = () => {
+    const filter = episodeFilter().trim().toLowerCase();
+    if (!filter) return episodes();
+    return episodes().filter((episode) =>
+      String(episode.number).includes(filter) || episode.title.toLowerCase().includes(filter),
+    );
+  };
   const currentEpisode = createMemo(() => {
     const target = selectedEpisodeId();
     return episodes().find((episode) => episode.id === target) || episodes().find((episode) => episode.number === requestedEpisode());
@@ -232,14 +240,33 @@ export default function Watch() {
           <aside class="watch-sidebar">
             <section class="watch-panel">
               <div class="watch-panel-heading">
-                <h2 class="section-heading">Episodes</h2>
-                <span class="muted">{episodes().length}</span>
+                <div>
+                  <h2 class="section-heading">Episodes</h2>
+                  <p class="episode-summary muted">
+                    {currentEpisode() ? `Episode ${currentEpisode()!.number} selected` : "Choose an episode"}
+                  </p>
+                </div>
+                <span class="episode-count">{episodes().length}</span>
               </div>
+              <input
+                class="episode-search"
+                type="search"
+                placeholder="Find an episode…"
+                value={episodeFilter()}
+                aria-label="Filter episodes"
+                onInput={(event) => setEpisodeFilter(event.currentTarget.value)}
+              />
               <div class="episode-list">
-                <For each={episodes()}>
+                <For each={visibleEpisodes()}>
                   {(episode) => (
-                    <button class={`episode-item ${currentEpisode()?.id === episode.id ? "active" : ""}`} type="button" onClick={() => { setSelectedEpisodeId(episode.id); setSelectedServerId(""); setSelectedStream(null); }}>
-                      <span>Episode {episode.number}</span>
+                    <button
+                      class={`episode-item ${currentEpisode()?.id === episode.id ? "active" : ""}`}
+                      type="button"
+                      aria-pressed={currentEpisode()?.id === episode.id}
+                      onClick={() => { setSelectedEpisodeId(episode.id); setSelectedServerId(""); setSelectedStream(null); }}
+                    >
+                      <span class="episode-number">EP {episode.number}</span>
+                      <span class="episode-label">{episode.title || `Episode ${episode.number}`}</span>
                       <span class="episode-flags">
                         <Show when={episode.has_sub}><small>Sub</small></Show>
                         <Show when={episode.has_dub}><small>Dub</small></Show>
@@ -275,12 +302,12 @@ export default function Watch() {
             <section class="watch-panel server-panel">
               <div class="watch-panel-heading"><h2 class="section-heading">Playback options</h2><Show when={isLoadingStreams()}><span class="muted">Loading…</span></Show></div>
               <div class="language-list" aria-label="Audio language">
-                <button class={`language-chip ${audioPreference() === "sub" ? "active" : ""}`} type="button" disabled={!languageAvailable("sub")} onClick={() => { setAudioPreference("sub"); setSelectedServerId(""); setSelectedStream(null); }}>Sub</button>
-                <button class={`language-chip ${audioPreference() === "dub" ? "active" : ""}`} type="button" disabled={!languageAvailable("dub")} onClick={() => { setAudioPreference("dub"); setSelectedServerId(""); setSelectedStream(null); }}>Dub</button>
+                <button class={`language-chip ${audioPreference() === "sub" ? "active" : ""}`} type="button" aria-pressed={audioPreference() === "sub"} disabled={!languageAvailable("sub")} onClick={() => { setAudioPreference("sub"); setSelectedServerId(""); setSelectedStream(null); }}>Sub</button>
+                <button class={`language-chip ${audioPreference() === "dub" ? "active" : ""}`} type="button" aria-pressed={audioPreference() === "dub"} disabled={!languageAvailable("dub")} onClick={() => { setAudioPreference("dub"); setSelectedServerId(""); setSelectedStream(null); }}>Dub</button>
               </div>
               <div class="server-list">
                 <For each={servers()}>
-                  {(server) => <button class={`server-chip ${selectedServerId() === server.id ? "active" : ""}`} type="button" onClick={() => void loadStreams(server)}>{server.name}</button>}
+                  {(server) => <button class={`server-chip ${selectedServerId() === server.id ? "active" : ""}`} type="button" aria-pressed={selectedServerId() === server.id} onClick={() => void loadStreams(server)}>{server.name}</button>}
                 </For>
               </div>
               <Show when={!serversQuery.isLoading && currentEpisode() && !servers().length}>

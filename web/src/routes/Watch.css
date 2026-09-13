@@ -220,6 +220,38 @@
   font-size: 18px;
 }
 
+.episode-summary {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.episode-count {
+  display: grid;
+  min-width: 32px;
+  min-height: 32px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(230, 67, 43, 0.14);
+  color: var(--flame-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.episode-search {
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--ink-soft-2);
+  color: var(--paper);
+  outline: none;
+}
+
+.episode-search:focus {
+  border-color: var(--flame-2);
+}
+
 .episode-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
@@ -230,8 +262,9 @@
 }
 
 .episode-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-content: initial;
   align-items: center;
   padding: 10px 12px;
   background: var(--ink-soft-2);
@@ -255,6 +288,22 @@
   background: var(--flame);
   border-color: var(--flame);
   color: var(--paper);
+}
+
+.episode-number {
+  color: var(--flame-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.episode-label {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline: 8px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .episode-flags {
@@ -291,11 +340,89 @@
   justify-content: center;
 }
 
+.player-box .video-player,
 .player-box video {
   width: 100%;
   height: 100%;
+}
+
+.video-player {
+  position: relative;
+  background: #000;
+}
+
+.player-box video {
   object-fit: contain;
   background: #000;
+}
+
+.player-toolbar {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(244, 236, 226, 0.16);
+  border-radius: var(--radius);
+  background: rgba(18, 13, 15, 0.82);
+  backdrop-filter: blur(8px);
+}
+
+.player-status {
+  margin-right: auto;
+  color: var(--paper-dim);
+  font-size: 11px;
+}
+
+.player-status.playing {
+  color: var(--teal);
+}
+
+.player-status.buffering,
+.player-status.loading {
+  color: var(--gold);
+}
+
+.player-status.error {
+  color: var(--flame-2);
+}
+
+.subtitle-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--paper-dim);
+  font-size: 11px;
+}
+
+.subtitle-select select,
+.player-retry {
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--ink-soft-2);
+  color: var(--paper);
+  font: inherit;
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
+.player-retry:hover {
+  border-color: var(--flame-2);
+  color: var(--flame-2);
+}
+
+@media (max-width: 640px) {
+  .player-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .player-status {
+    width: 100%;
+  }
 }
 
 .player-placeholder {

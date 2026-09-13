@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from anime_extensions.core import ExtensionRuntime, Source, SourceCapability, SourceMetadata
-from anime_extensions.exceptions import AnimeExtensionError
+from anime_extensions.exceptions import AnimeExtensionError, UpstreamUnreachable
 from anime_extensions.models import Anime, Episode, Page, Server, Stream, Subtitle
 from anime_extensions_api.app import create_app, lifespan
 from anime_extensions_api.config import APISettings, CacheSettings
@@ -118,6 +118,8 @@ class MockSource(Source):
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
         if server_id == "broken":
             raise AnimeExtensionError("Extractor failed to parse media token")
+        if server_id == "unreachable":
+            raise UpstreamUnreachable("cannot connect to server")
         return [
             Stream(
                 url="https://mock.example.com/stream.m3u8",
@@ -179,6 +181,7 @@ async def app():
     finally:
         await runtime.close()
         app.state.cache.clear()
+        app.state.hls_proxy_registry.clear()
 
 
 @pytest.mark.asyncio
@@ -373,6 +376,13 @@ async def test_upstream_error_handling(app):
         res_stream = await client.get("/api/v1/mock/streams/mock-1-ep-1?server_id=broken")
         assert res_stream.status_code == 502
         assert res_stream.json()["error"]["code"] == "UPSTREAM_SOURCE_ERROR"
+
+        # Upstream unreachable on streams
+        res_unreachable_stream = await client.get(
+            "/api/v1/mock/streams/mock-1-ep-1?server_id=unreachable"
+        )
+        assert res_unreachable_stream.status_code == 503
+        assert res_unreachable_stream.json()["error"]["code"] == "UPSTREAM_UNREACHABLE"
 
 
 @pytest.mark.asyncio

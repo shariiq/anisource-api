@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from anime_extensions import ExtensionRuntime
+from anime_extensions import ExtensionRuntime, UpstreamUnreachable
 
 DEFAULT_BASE_URL = "https://anisource-api.onrender.com"
 DEFAULT_QUERY = "frieren"
@@ -78,6 +78,7 @@ class StreamResult:
     server_name: str
     stream_count: int
     error: str | None = None
+    skip_reason: str | None = None
     warnings: tuple[str, ...] = ()
 
 
@@ -159,6 +160,23 @@ def validate_streams(streams: Sequence[Any]) -> tuple[int, list[str]]:
     return valid_count, warnings
 
 
+def upstream_skip_reason(exc: Exception) -> str | None:
+    """Return a skip reason when one server's upstream cannot be reached."""
+    if isinstance(exc, UpstreamUnreachable):
+        return str(exc)
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code not in {503, 504}:
+        return None
+
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        payload = None
+    code = payload.get("error", {}).get("code") if isinstance(payload, Mapping) else None
+    if exc.response.status_code == 503 or code in {"UPSTREAM_UNREACHABLE", "UPSTREAM_TIMEOUT"}:
+        return f"HTTP {exc.response.status_code} {code or 'upstream unavailable'}"
+    return None
+
+
 async def resolve_servers(
     servers: Sequence[tuple[str, str]],
     resolve: Callable[[str], Awaitable[Sequence[Any]]],
@@ -175,10 +193,15 @@ async def resolve_servers(
                 return StreamResult(server_name, 0, "empty stream list")
             if not valid_count:
                 return StreamResult(
-                    server_name, 0, "no streams have valid HTTP(S) URLs", tuple(warnings)
+                    server_name,
+                    0,
+                    "no streams have valid HTTP(S) URLs",
+                    warnings=tuple(warnings),
                 )
             return StreamResult(server_name, valid_count, warnings=tuple(warnings))
         except Exception as exc:  # Live upstream failures are reported per server.
+            if skip_reason := upstream_skip_reason(exc):
+                return StreamResult(server_name, 0, skip_reason=skip_reason)
             return StreamResult(server_name, 0, f"{type(exc).__name__}: {exc}")
 
     return await asyncio.gather(*(resolve_one(server_id, name) for server_id, name in servers))
@@ -188,6 +211,9 @@ def record_stream_results(report: PipelineReport, results: Sequence[StreamResult
     """Fold concurrently collected server results into one pipeline report."""
     report.servers_tested = len(results)
     for result in results:
+        if result.skip_reason:
+            report.record(f"[SKIP] server {result.server_name!r}: {result.skip_reason}")
+            continue
         if result.error:
             report.fail(f"server {result.server_name!r}: {result.error}")
             continue

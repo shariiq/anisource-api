@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock
 
+import aiohttp
 import pytest
 
 from anime_extensions.core import (
@@ -15,6 +16,7 @@ from anime_extensions.core import (
     SourceRegistry,
     UpstreamNotFound,
     UpstreamUnavailable,
+    UpstreamUnreachable,
 )
 from anime_extensions.models import Anime, Page
 
@@ -164,7 +166,7 @@ def test_runtime_skips_disabled_builtin_sources():
         "anikoto",
         "animenosub",
     }
-    assert len(runtime.extractors) == 12
+    assert len(runtime.extractors) == 13
 
 
 def test_runtime_accepts_runtime_source_exclusions():
@@ -188,6 +190,24 @@ async def test_http_error_translation_for_upstream_unavailability():
 
     with pytest.raises(UpstreamUnavailable) as exc_info:
         await client.get("https://mock.source/unavailable")
+
+    assert exc_info.value.status_code == 503
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_http_error_translation_for_unreachable_upstream():
+    """Verify transport failures translate to UpstreamUnreachable."""
+    client = HttpClient()
+    await client.start()
+    client.session.get = MagicMock(
+        side_effect=aiohttp.ClientConnectorError(
+            connection_key=MagicMock(), os_error=OSError("dns failed")
+        )
+    )
+
+    with pytest.raises(UpstreamUnreachable) as exc_info:
+        await client.get("https://missing.mock/unavailable")
 
     assert exc_info.value.status_code == 503
     await client.close()

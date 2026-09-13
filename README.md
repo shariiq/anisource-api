@@ -16,7 +16,7 @@ A modern asynchronous Python SDK and production FastAPI service for anime catalo
 - **Production API behavior**: FastAPI dependencies are resolved from application state, SDK errors map to appropriate HTTP status codes, and response contracts remain stable.
 - **Stampede-resistant caching**: `AsyncTTLCache.get_or_set` coalesces concurrent cache misses for the same key into one upstream request.
 - **Active sources**: AniWaves, Anikoto, and AnimeNoSub (MKissa quarantined due to upstream anti-bot/CAPTCHA).
-- **Built-in extractors**: Byse/Filemoon, DoodStream, and EchoVideo-compatible hosts.
+- **Built-in extractors**: Byse, DoodStream, EchoVideo, GogoStream, MegaPlay, Moon/Filemoon, Mp4Upload, Okru, StreamWish, Streamlare, VidMoly, Vtube, and WolfStream.
 
 ## Architecture
 
@@ -177,10 +177,6 @@ IDs are opaque source-owned values and may contain path separators. Clients shou
 
 See [the scraper maintenance guide](docs/MAINTENANCE.md) for porting and repair guidance.
 
-## Architecture Roadmap
-
-The project tracks planned architectural improvements in [docs/ROADMAP.md](docs/ROADMAP.md). This includes SDK enhancements, API optimizations, and library-grade refactorings planned for incremental implementation.
-
 ## Contributing
 
 - [Writing Extractors Guide](docs/WRITING_EXTRACTORS.md) — detailed guidance for implementing video extractors
@@ -188,14 +184,18 @@ The project tracks planned architectural improvements in [docs/ROADMAP.md](docs/
 
 ## Verification
 
-Run the required repository-wide static checks before committing:
+Git hooks automatically handle validation:
+- `.githooks/pre-commit` runs Ruff linting and formatting checks.
+- `.githooks/pre-push` runs Ruff linting, formatting, bytecode compilation, and the complete unit-test suite.
+
+Run only targeted tests or lints relevant to the changed area during active debugging:
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
+uv run pytest tests/sources/test_<source>.py::<test_name>
+uv run ruff check path/to/changed_file.py
 ```
 
-Run only the deterministic tests relevant to the changed area while developing. The repository's pre-push gate runs linting, formatting, bytecode compilation, and the complete unit-test suite. Targeted live tests may be run explicitly with `--run-live`; they make real requests to third-party services and can fail when an upstream site is unavailable or changes behavior. GitHub Actions is authoritative for the full test and live-test matrix. Unit tests remain network-isolated.
+Targeted live tests may be run explicitly with `--run-live` (or via `test_deployed.py --local-only`); they make real requests to third-party services and can fail when an upstream site is unavailable. GitHub Actions is authoritative for the full test and live-test matrix. Unit tests remain network-isolated.
 
 ## License
 

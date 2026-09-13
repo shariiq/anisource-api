@@ -33,6 +33,7 @@ from .errors import (
     UpstreamNotFound,
     UpstreamRateLimited,
     UpstreamUnavailable,
+    UpstreamUnreachable,
 )
 from .extractor import Extractor
 from .http import HttpClient
@@ -73,6 +74,7 @@ __all__ = [
     "UpstreamNotFound",
     "UpstreamRateLimited",
     "UpstreamUnavailable",
+    "UpstreamUnreachable",
     "TimeoutError",
     "ParsingError",
     "ExtractorError",

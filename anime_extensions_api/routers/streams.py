@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from anime_extensions.core.errors import SourceNotFoundError, UnsupportedCapabilityError
 from anime_extensions.core.metadata import SourceCapability
@@ -14,6 +14,7 @@ from ..config import get_settings
 from ..dependencies import CacheDep, RuntimeDep
 from ..schemas import ServerSchema, StreamSchema
 from ._cache import fetch_cached
+from .proxy import register_hls_proxy_target
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ async def get_servers(
         ttl_seconds=settings.cache.servers_ttl_seconds,
     )
 
-    return [ServerSchema.model_validate(srv) for srv in servers]
+    return [ServerSchema.model_validate(server) for server in servers]
 
 
 @router.get(
@@ -69,6 +70,7 @@ async def get_servers(
 async def get_streams(
     source_id: str,
     episode_id: str,
+    request: Request,
     server_id: str = Query(
         ..., description="Server identifier obtained from the /servers endpoint."
     ),
@@ -96,4 +98,15 @@ async def get_streams(
         ttl_seconds=settings.cache.streams_ttl_seconds,
     )
 
-    return [StreamSchema.model_validate(stream) for stream in streams]
+    return [
+        StreamSchema.model_validate(stream)
+        if not (stream.is_hls and stream.headers)
+        else StreamSchema(
+            url=register_hls_proxy_target(request, stream.url, stream.headers),
+            quality=stream.quality,
+            headers={},
+            subtitles=stream.subtitles,
+            is_hls=True,
+        )
+        for stream in streams
+    ]

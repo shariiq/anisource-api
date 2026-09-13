@@ -23,8 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.extractor import Extractor
-from ..models import Stream, Subtitle
+from anime_extensions.core import Extractor, Stream, Subtitle
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +119,7 @@ Stream(
 **Raise `ParsingError`** when the response is malformed or missing required data:
 
 ```python
-from ..exceptions import ParsingError
+from anime_extensions.core import ParsingError
 
 if not sources:
     raise ParsingError(
@@ -319,9 +318,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..core.extractor import Extractor
-from ..exceptions import ParsingError
-from ..models import Stream
+from anime_extensions.core import Extractor, ParsingError, Stream
 
 log = logging.getLogger(__name__)
 

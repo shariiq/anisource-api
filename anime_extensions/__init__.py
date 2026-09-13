@@ -30,6 +30,7 @@ from .exceptions import (
     UpstreamNotFound,
     UpstreamRateLimited,
     UpstreamUnavailable,
+    UpstreamUnreachable,
 )
 
 __all__ = [
@@ -65,6 +66,7 @@ __all__ = [
     "UpstreamNotFound",
     "UpstreamRateLimited",
     "UpstreamUnavailable",
+    "UpstreamUnreachable",
     "UnsupportedCapabilityError",
     "CryptoError",
     "ExtractorError",

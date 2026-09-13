@@ -8,7 +8,7 @@ Operate at principal-engineer quality.
 
 - **Workspace:** Work strictly inside `"C:\Users\shariq\Documents\Code\clones\anime-extensions-py"`.
 
-- **Kt Source** The source of kotlin files that is used to port scrapers is `"C:\Users\shariq\Documents\Code\clones\anime-extensions"`.
+- **Kotlin reference source:** `"C:\Users\shariq\Documents\Code\clones\anime-extensions"` is the authoritative implementation for scraper ports.
 
   Never modify, test, stage, commit, or deploy anything outside `"C:\Users\shariq\Documents\Code\clones\anime-extensions-py"` unless explicitly instructed.
 
@@ -27,7 +27,7 @@ Operate at principal-engineer quality.
 - **API docs:** `https://anisource-api.onrender.com/docs`
 
 - **Stack:**
-  - Python 3.14.7, which does exists as of September 2026
+  - Python 3.14.7
   - `uv`
   - FastAPI
   - `aiohttp` for scraper HTTP
@@ -72,7 +72,7 @@ The SDK must not depend on FastAPI.
 
 - `anime_extensions/extractors/`
   - video extractors
-  - built-in catalogue includes Byse, Dood, and EchoVideo
+  - built-in catalogue includes Byse, Dood, EchoVideo, GogoStream, MegaPlay, Moon, Mp4Upload, Okru, Streamlare, StreamWish, VidMoly, Vtube, and WolfStream
 
 - `anime_extensions_api/`
   - FastAPI layer
@@ -186,8 +186,8 @@ The SDK must not depend on FastAPI.
 Every source implements the following contract:
 
 1. `search(query, page)`
-   - returns `tuple[list[Anime], bool]`
-   - shape: `(results, has_next)`
+   - returns `Page[Anime]`
+   - contains `items`, `page`, and `has_next`
 
 2. `get_details(anime_id)`
    - returns `Anime`
@@ -207,7 +207,7 @@ Every source implements the following contract:
 - `aniwaves`
 - `anikoto`
 - `animenosub`
-- `mkissa` (quarantined: toggle in `anime_extensions/sources/__init__.py`)
+- `mkissa` is present in the catalogue but disabled by default because of upstream anti-bot/CAPTCHA behavior; enable only deliberately in `anime_extensions/sources/__init__.py`.
 
 ---
 
@@ -237,13 +237,20 @@ For the full step-by-step diagnostic and porting workflow, see `docs/MAINTENANCE
 
 ## Testing & Verification
 
-Do not run the full local pytest suite or the entire live-test suite locally.
+Do not run the full local pytest suite or the entire live-test suite as a routine development step.
+
+The repository hooks already run the applicable validation:
+
+- `.githooks/pre-commit` runs Ruff linting and formatting checks.
+- `.githooks/pre-push` runs Ruff linting and formatting checks, bytecode compilation, and the unit test suite.
+
+When a commit or push is going to be made, rely on those hooks instead of running the same full checks manually beforehand. Do not bypass a hook; investigate and fix any failure it reports.
 
 GitHub Actions is the authoritative environment for full test and live-test verification after a branch is pushed.
 
 ### Local verification
 
-Local pytest and live-test execution is for targeted debugging only.
+Local pytest and live-test execution is for targeted debugging only. Run focused tests when validating a change during development, unless the normal commit or push hook will immediately run the full check.
 
 Run individual relevant tests, for example:
 
@@ -268,8 +275,6 @@ For formatting verification of a changed file during development:
 ```bash
 uv run ruff format --check path/to/changed_file.py
 ```
-
-Before committing anything, run the full Ruff lint and format checks as defined in the Commit, Push & CI section.
 
 Live-test failures may result from transient upstream outages or upstream service behavior.
 
@@ -309,7 +314,7 @@ When an error appears during implementation or testing:
 
 5. Prefer fixing the underlying or refactoring the entire code defect over masking its symptoms.
 
-6. If `try` / `except` is used then Preserve meaningful failures and typed exceptions rather than converting them into silent fallbacks but refer to point 1 to 5 before.
+6. Preserve meaningful failures and typed exceptions rather than converting them into silent fallbacks.
 
 ---
 
@@ -347,29 +352,21 @@ Do not commit or push directly to `main` unless explicitly instructed.
    git -C anime-extensions-py add <files>
    ```
 
-3. **Before committing**, run the full lint and format checks:
-
-   ```bash
-   uv run ruff check .; uv run ruff format --check .
-   ```
-
-   Fix every failure before proceeding.
-
-4. Commit:
+3. Commit (hooks automatically validate linting and formatting via `.githooks/pre-commit`):
 
    ```bash
    git -C anime-extensions-py commit -m "..."
    ```
 
-5. Push the branch:
+4. Push the branch (hooks automatically validate linting, formatting, compilation, and unit tests via `.githooks/pre-push`):
 
    ```bash
    git -C anime-extensions-py push -u origin feature/<short-description>
    ```
 
-6. Create a pull request using the `gh` CLI.
+5. Create a pull request using the `gh` CLI.
 
-7. Use `gh` to inspect GitHub Actions results.
+6. Use `gh` to inspect GitHub Actions results.
 
    GitHub Actions performs the authoritative remote checks, including:
 

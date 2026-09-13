@@ -1,4 +1,6 @@
 .detail-page {
+  min-width: 0;
+  overflow: clip;
   padding-bottom: 72px;
 }
 
@@ -33,13 +35,19 @@
 
 .detail-layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
   gap: 40px;
+}
+
+.detail-content,
+.detail-sidebar,
+.detail-rail-section {
+  min-width: 0;
 }
 
 @media (min-width: 1024px) {
   .detail-layout {
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
     gap: 48px;
   }
 }
@@ -163,6 +171,8 @@
 }
 
 .detail-title {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: clamp(32px, 4.5vw, 56px);
   color: var(--paper);
   line-height: 1.1;
@@ -277,8 +287,14 @@
   }
 
   .detail-sidebar {
+    width: min(100%, 240px);
     max-width: 240px;
     margin-inline: auto;
+  }
+
+  .detail-facts,
+  .detail-actions {
+    width: 100%;
   }
 
   .detail-main {

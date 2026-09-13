@@ -66,6 +66,16 @@ export default function Detail() {
         <div class="loading-state page-shell">Loading anime details…</div>
       </Show>
 
+      <Show when={query.isError}>
+        <div class="empty-state page-shell detail-error">
+          <strong>Unable to load this anime.</strong>
+          <span>{query.error instanceof Error ? query.error.message : "AniList did not return the details."}</span>
+          <button class="btn primary-btn" type="button" onClick={() => void query.refetch()}>
+            Try again
+          </button>
+        </div>
+      </Show>
+
       <Show when={media()}>
         {(item) => (
           <>
@@ -89,6 +99,8 @@ export default function Detail() {
                       src={item().coverImage.extraLarge || item().coverImage.large}
                       alt={item().title.english || item().title.romaji}
                       class="detail-poster"
+                      loading="eager"
+                      decoding="async"
                     />
                   </div>
 

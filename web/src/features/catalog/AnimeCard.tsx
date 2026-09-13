@@ -31,7 +31,11 @@ export function AnimeCard(props: AnimeCardProps) {
   };
 
   const handleFocus = () => {
-    scheduleDetailPrefetch(queryClient, props.media.id);
+    scheduleDetailPrefetch(queryClient, props.media.id, 0);
+  };
+
+  const handlePointerDown = () => {
+    scheduleDetailPrefetch(queryClient, props.media.id, 0);
   };
 
   const handleBlur = () => {
@@ -44,6 +48,7 @@ export function AnimeCard(props: AnimeCardProps) {
       class="anime-card"
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
+      onPointerDown={handlePointerDown}
       onFocus={handleFocus}
       onBlur={handleBlur}
     >

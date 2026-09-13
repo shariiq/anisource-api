@@ -1,4 +1,4 @@
-import { useSearchParams } from "@solidjs/router";
+import { A, useSearchParams } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import {
@@ -150,7 +150,7 @@ export default function Browse() {
         <div class="search-suggestions-dropdown">
           <For each={suggestionQuery.data!.Page.media}>
             {(item) => (
-              <a href={`/anime/${item.id}`} class="suggestion-item">
+              <A href={`/anime/${item.id}`} class="suggestion-item">
                 <img
                   src={item.coverImage.large}
                   alt={item.title.english || item.title.romaji}
@@ -167,7 +167,7 @@ export default function Browse() {
                     </Show>
                   </div>
                 </div>
-              </a>
+              </A>
             )}
           </For>
         </div>

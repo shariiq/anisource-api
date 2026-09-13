@@ -5,7 +5,11 @@ interface InitHlsOptions {
   video: HTMLVideoElement;
   url: string;
   onManifestParsed?: (levels: Level[]) => void;
-  onError?: (type: string, details: string, f: boolean) => void;
+  onError?: (type: string, details: string, fatal: boolean) => void;
+}
+
+export interface HlsController {
+  destroy: () => void;
 }
 
 export function isHlsSupported(): boolean {
@@ -16,15 +20,15 @@ export function isNativeHlsSupported(video: HTMLVideoElement): boolean {
   return Boolean(video.canPlayType("application/vnd.apple.mpegurl"));
 }
 
-export function initializeHls(options: InitHlsOptions): Hls {
+export function initializeHls(options: InitHlsOptions): HlsController {
   const hls = new Hls({
     enableWorker: true,
-    lowLatencyMode: true,
-    backBufferLength: 90,
+    lowLatencyMode: false,
+    backBufferLength: 120,
+    maxBufferLength: 30,
+    maxMaxBufferLength: 60,
+    startFragPrefetch: true,
   });
-
-  hls.loadSource(options.url);
-  hls.attachMedia(options.video);
 
   hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
     if (options.onManifestParsed) {
@@ -32,24 +36,35 @@ export function initializeHls(options: InitHlsOptions): Hls {
     }
   });
 
+  let networkRecoveryUsed = false;
+  let mediaRecoveryUsed = false;
+
   hls.on(Hls.Events.ERROR, (_, data) => {
-    if (options.onError) {
-      options.onError(data.type, data.details, data.fatal);
+    if (!data.fatal) {
+      options.onError?.(data.type, data.details, false);
+      return;
     }
-    if (data.fatal) {
-      switch (data.type) {
-        case Hls.ErrorTypes.NETWORK_ERROR:
-          hls.startLoad();
-          break;
-        case Hls.ErrorTypes.MEDIA_ERROR:
-          hls.recoverMediaError();
-          break;
-        default:
-          hls.destroy();
-          break;
-      }
+
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !networkRecoveryUsed) {
+      networkRecoveryUsed = true;
+      hls.startLoad();
+      options.onError?.(data.type, `${data.details}; retrying once`, false);
+      return;
     }
+
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecoveryUsed) {
+      mediaRecoveryUsed = true;
+      hls.recoverMediaError();
+      options.onError?.(data.type, `${data.details}; recovering once`, false);
+      return;
+    }
+
+    options.onError?.(data.type, data.details, true);
+    hls.destroy();
   });
 
-  return hls;
+  hls.loadSource(options.url);
+  hls.attachMedia(options.video);
+
+  return { destroy: () => hls.destroy() };
 }

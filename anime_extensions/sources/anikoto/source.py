@@ -8,6 +8,7 @@ import logging
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
@@ -543,9 +544,10 @@ class Anikoto(Source):
     ) -> list[Stream]:
         """Fetch sources from the getSources/getSourcesNew API."""
         # Determine stream type from URL path
-        path_segments = embed_url.split("/")
+        parsed_path = urlparse(embed_url).path
+        path_segments = [s for s in parsed_path.split("/") if s]
         stream_type = ""
-        if path_segments[-1] in ("sub", "dub", "hsub"):
+        if path_segments and path_segments[-1] in ("sub", "dub", "hsub"):
             stream_type = path_segments[-1]
 
         api_headers = {

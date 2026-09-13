@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from anime_extensions.models import Anime, Server
+from anime_extensions.models import Anime, Server, Stream
 from anime_extensions.sources.anikoto import Anikoto, vrf_encrypt
 
 LISTING_HTML = """
@@ -153,3 +153,47 @@ def test_resolve_video_type(source: Anikoto):
     assert source._resolve_video_type("hsub") == "h-sub"
     assert source._resolve_video_type("sub") == "sub"
     assert source._resolve_video_type("unknown") == "sub"
+
+
+@pytest.mark.asyncio
+async def test_fetch_sources_from_api_path_segment_with_query_params(source: Anikoto):
+    """Test stream_type extraction when embed_url contains query parameters like ?s=tcdn."""
+    embed_url = "https://megaplay.buzz/stream/s-2/168748/sub?s=tcdn"
+    data_id = "174306"
+    host = "megaplay.buzz"
+    server_id = "srv-hd1"
+
+    source._get_json = AsyncMock(
+        return_value={
+            "sources": {"file": "https://megaplay.buzz/stream/master.m3u8"},
+            "tracks": [
+                {"file": "https://megaplay.buzz/sub.vtt", "label": "English", "kind": "captions"}
+            ],
+        }
+    )
+    source._parse_m3u8 = AsyncMock(
+        return_value=[
+            Stream(
+                url="https://megaplay.buzz/stream/1080p.m3u8",
+                quality="1080p",
+                headers={"Referer": "https://megaplay.buzz/"},
+            )
+        ]
+    )
+
+    streams = await source._fetch_sources_from_api(data_id, host, embed_url, server_id)
+
+    assert len(streams) == 1
+    assert streams[0].url == "https://megaplay.buzz/stream/1080p.m3u8"
+    assert streams[0].quality == "1080p"
+
+    # Verify that stream_type was correctly parsed as 'sub' despite ?s=tcdn query parameter
+    source._get_json.assert_called_once_with(
+        "https://megaplay.buzz/stream/getSources?id=174306&id=174306&type=sub&type=sub",
+        headers={
+            "Accept": "*/*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": embed_url,
+            "Origin": f"https://{host}",
+        },
+    )

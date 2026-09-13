@@ -357,18 +357,21 @@ class Anikoto(Source):
 
     # === Servers & Streams ===
 
+    @staticmethod
+    def _episode_url_from_id(episode_id: str) -> str:
+        """Extract the source-relative episode URL encoded in an episode ID."""
+        marker = "&epurl="
+        if marker not in episode_id:
+            return ""
+        return episode_id.split(marker, 1)[1].split("&", 1)[0]
+
     async def get_servers(self, episode_id: str) -> list[Server]:
         """Get available video servers."""
-        parts = episode_id.split("&")
-        if not parts:
+        if not episode_id:
             return []
 
-        ids = parts[0]
-        epurl = ""
-        for part in parts:
-            if part.startswith("epurl="):
-                epurl = part.split("=", 1)[1]
-                break
+        ids = episode_id.split("&", 1)[0]
+        epurl = self._episode_url_from_id(episode_id)
 
         ajax_url = f"{self.base_url}/ajax/server/list"
 
@@ -420,14 +423,7 @@ class Anikoto(Source):
             episode_id: The episode identifier (needed for referer)
             server_id: The server identifier to extract streams from
         """
-        # Extract episode URL for referer
-        ep_url = ""
-        if "&epurl=" in episode_id:
-            for part in episode_id.split("&"):
-                if part.startswith("epurl="):
-                    ep_url = part.split("=", 1)[1]
-                    break
-
+        ep_url = self._episode_url_from_id(episode_id)
         embed_url = await self._get_embed_link(server_id, ep_url)
         if not embed_url:
             return []

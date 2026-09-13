@@ -29,7 +29,7 @@ COPY docs/ docs/
 # Build native C extension for PoW solver and install project
 RUN --mount=type=cache,target=/root/.cache/uv \
     apt-get update && apt-get install -y gcc && \
-    gcc -O3 -shared -fPIC anime_extensions/utils/_byse_pow_dll.c -o anime_extensions/utils/_byse_pow.so && \
+    gcc -O3 -march=native -funroll-loops -shared -fPIC anime_extensions/utils/_byse_pow_dll.c -o anime_extensions/utils/_byse_pow.so && \
     uv pip install --no-cache -e .
 
 # ==============================================================================
@@ -64,4 +64,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://0.0.0.0:8000/health', timeout=2)" || exit 1
 
 # Production server execution with uvicorn
-CMD ["uvicorn", "anime_extensions_api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--no-access-log"]
+CMD ["uvicorn", "anime_extensions_api.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--loop", "uvloop", "--no-access-log"]

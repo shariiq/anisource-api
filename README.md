@@ -149,6 +149,19 @@ Paginated endpoints return:
 
 IDs are opaque source-owned values and may contain path separators. Clients should URL-encode IDs when constructing requests.
 
+## Performance & Future Optimizations
+
+The SDK is designed for high-concurrency production deployments. Key optimizations include:
+
+- **uvloop compatibility**: `uvloop` is a Linux-only dependency, and the Render `Procfile`, `render.yaml`, and Docker entry point explicitly select it for Uvicorn. Local Windows development continues to use the standard `asyncio` loop.
+- **Native C acceleration**: CPU-bound operations, such as the Byse stream Proof-of-Work solver, use a thread-safe, stack-allocated native C implementation (`_byse_pow_dll.c`) compiled in the container (`gcc -O3 -march=native -funroll-loops`) so the event loop remains responsive.
+
+### Keep in Mind for Future Work
+
+- **Prioritize Fast Path Extractors**: The stream pipeline resolves server extraction concurrently. Future optimizations should look into yielding fast-path extractors (like EchoVideo) before CPU-bound or captcha-heavy extractors (like Byse) finish, reducing response latency.
+- **Reduced API Fetches**: Maximize the usage of composite opaque IDs (e.g., `&epurl=`) in sources like `Anikoto` and `AniWaves` to prevent redundant `get_details()` fallback fetches during `get_episodes()` calls.
+- **Diagnostics Integrity**: True latency bottlenecks should be fixed in the source pipeline. Diagnostic scripts (e.g., `test_deployed.py`) must never be modified simply to hide overhead or artificially improve benchmark metrics.
+
 ## Adding an Extension
 
 ### Source

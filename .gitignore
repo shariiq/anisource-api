@@ -69,6 +69,10 @@ web/*.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
 
+# Frontend source utilities are not build artifacts.
+!web/src/lib/
+!web/src/lib/*.ts
+
 # IDE / Editor
 .vscode/
 .idea/

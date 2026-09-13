@@ -743,13 +743,28 @@ class Anikoto(Source):
         """Fetch and parse an HLS playlist with host-required request headers."""
         from urllib.parse import urlparse
 
-        host = urlparse(m3u8_url).netloc
-        origin = f"https://{host}" if host else None
+        parsed_ref = urlparse(referer)
+        origin = f"https://{parsed_ref.netloc}" if parsed_ref.netloc else None
         headers = {"Referer": referer}
         if origin:
             headers["Origin"] = origin
 
-        body = await self._request(m3u8_url, headers=headers)
+        try:
+            body = await self._request(m3u8_url, headers=headers)
+        except Exception:
+            # If we cannot fetch the playlist (e.g., 403 Forbidden), return the master URL as a fallback
+            # This preserves headers and allows the extractor to work with upstream protections
+            label = "auto"
+            return [
+                Stream(
+                    url=m3u8_url,
+                    quality=label,
+                    headers=headers,
+                    subtitles=subtitles,
+                    is_hls=True,
+                )
+            ]
+
         if not body.lstrip().startswith("#EXTM3U"):
             raise ParsingError(f"Anikoto: expected an HLS playlist from {m3u8_url}")
 

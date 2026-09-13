@@ -247,7 +247,7 @@ async def test_parse_m3u8_headers_and_parsing_error(source: Anikoto):
     assert streams[0].quality == "720p"
     assert streams[0].url == "https://stream.host/path/720p.m3u8"
     assert streams[0].headers["Referer"] == "https://megaplay.buzz/stream/s-1/12345/sub"
-    assert streams[0].headers["Origin"] == "https://stream.host"
+    assert streams[0].headers["Origin"] == "https://megaplay.buzz"
 
     # Assert non-HLS payload raises ParsingError
     source._request = AsyncMock(return_value="<html>Access Denied</html>")

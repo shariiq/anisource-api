@@ -1,7 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <stdint.h>
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 #define BUFFER_SIZE 512
 #define BUFFER_MASK 511
@@ -14,11 +14,20 @@
 #define EXPORT
 #endif
 
-static inline uint32_t rotl32(uint32_t value, int shift) {
+#if defined(__GNUC__) || defined(__clang__)
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
+#else
+#define ALWAYS_INLINE inline
+#endif
+
+static ALWAYS_INLINE uint32_t rotl32(uint32_t value, int shift) {
     return (value << shift) | (value >> (32 - shift));
 }
 
-static inline int count_leading_zeros32(uint32_t value) {
+static ALWAYS_INLINE int count_leading_zeros32(uint32_t value) {
+#if defined(__GNUC__) || defined(__clang__)
+    return value == 0 ? 32 : __builtin_clz(value);
+#else
     if (value == 0) return 32;
     int lz = 0;
     if ((value & 0xFFFF0000) == 0) { lz += 16; value <<= 16; }
@@ -27,17 +36,48 @@ static inline int count_leading_zeros32(uint32_t value) {
     if ((value & 0xC0000000) == 0) { lz += 2; value <<= 2; }
     if ((value & 0x80000000) == 0) { lz += 1; }
     return lz;
+#endif
 }
 
-static inline void mix(uint32_t *s0, uint32_t *s1, uint32_t *s2, uint32_t *s3) {
-    *s0 = (*s0 + *s1);
+static ALWAYS_INLINE void mix(uint32_t *restrict s0, uint32_t *restrict s1,
+                               uint32_t *restrict s2, uint32_t *restrict s3) {
+    *s0 = *s0 + *s1;
     *s3 = rotl32(*s3 ^ *s0, 16);
-    *s2 = (*s2 + *s3);
+    *s2 = *s2 + *s3;
     *s1 = rotl32(*s1 ^ *s2, 12);
-    *s0 = (*s0 + *s1);
+    *s0 = *s0 + *s1;
     *s3 = rotl32(*s3 ^ *s0, 8);
-    *s2 = (*s2 + *s3);
+    *s2 = *s2 + *s3;
     *s1 = rotl32(*s1 ^ *s2, 7);
+}
+
+/* Fast unsigned/signed int -> decimal ASCII, avoiding format-string parsing. */
+static ALWAYS_INLINE int fast_itoa(int value, char *out) {
+    char tmp[12];
+    int i = 0;
+    unsigned int uvalue;
+    int negative = 0;
+
+    if (value < 0) {
+        negative = 1;
+        uvalue = (unsigned int)(-(long)value);
+    } else {
+        uvalue = (unsigned int)value;
+    }
+
+    if (uvalue == 0) {
+        tmp[i++] = '0';
+    } else {
+        while (uvalue) {
+            tmp[i++] = (char)('0' + (uvalue % 10));
+            uvalue /= 10;
+        }
+    }
+    if (negative) tmp[i++] = '-';
+
+    int length = i;
+    while (i > 0) *out++ = tmp[--i];
+    return length;
 }
 
 EXPORT int solve_byse_pow_c(const char *nonce, int difficulty, int max_iterations) {
@@ -46,14 +86,16 @@ EXPORT int solve_byse_pow_c(const char *nonce, int difficulty, int max_iteration
     if (nonce_len > 253) {
         return -1;
     }
-    snprintf(prefix, sizeof(prefix), "%s:", nonce);
+    size_t prefix_len = (size_t)snprintf(prefix, sizeof(prefix), "%s:", nonce);
 
+    /* Kept on the stack: asyncio.to_thread may run PoW requests concurrently. */
     uint32_t buf[BUFFER_SIZE];
+    char input[280];
+    memcpy(input, prefix, prefix_len);
 
     for (int counter = 0; counter <= max_iterations; counter++) {
-        char input[280];
-        snprintf(input, sizeof(input), "%s%d", prefix, counter);
-        size_t input_len = strlen(input);
+        int digits = fast_itoa(counter, input + prefix_len);
+        size_t input_len = prefix_len + (size_t)digits;
 
         uint32_t s0 = 1779033703;
         uint32_t s1 = 3144134277;
@@ -61,7 +103,7 @@ EXPORT int solve_byse_pow_c(const char *nonce, int difficulty, int max_iteration
         uint32_t s3 = 2773480762;
 
         for (size_t i = 0; i < input_len; i++) {
-            s0 = (s0 + (uint8_t)input[i]);
+            s0 = s0 + (uint8_t)input[i];
             s0 = rotl32(s0, 7);
             mix(&s0, &s1, &s2, &s3);
         }

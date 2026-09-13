@@ -141,6 +141,7 @@ async def test_get_streams_routes_by_host(source: AniWaves, embed_url: str, extr
 
     await source.get_streams("id-one&epurl=/watch/naruto/ep-1", "server-1")
 
+    source._get_embed_url.assert_awaited_once_with("server-1", "/watch/naruto/ep-1")
     source.context.extractors.resolve.assert_called_once_with(embed_url)
     extractor_cls.assert_called_once_with(source.context)
     extractor_instance.extract.assert_awaited_once()

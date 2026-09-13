@@ -278,7 +278,8 @@ class AniWaves(Source):
 
     async def get_streams(self, episode_id: str, server_id: str) -> list[Stream]:
         """Resolve the provider-specific extractor dynamically and extract streams."""
-        embed_url = await self._get_embed_url(server_id, episode_id)
+        epurl = self._episode_url_from_id(episode_id)
+        embed_url = await self._get_embed_url(server_id, epurl)
         if not embed_url:
             return []
 
@@ -288,26 +289,14 @@ class AniWaves(Source):
         if extractor.name == "Doodstream":
             kwargs["quality_prefix"] = kwargs.pop("label_prefix")
         elif extractor.name == "Byse":
-            epurl = next(
-                (
-                    part.split("=", 1)[1]
-                    for part in episode_id.split("&")
-                    if part.startswith("epurl=")
-                ),
-                "",
-            )
             kwargs.update(embed_parent=f"{self.base_url}{epurl}", embed_origin=self.base_url)
 
         return await extractor.extract(embed_url, **kwargs)
 
-    async def _get_embed_url(self, server_id: str, episode_id: str) -> str | None:
+    async def _get_embed_url(self, server_id: str, epurl: str) -> str | None:
         """Get an embed URL from an AniWaves server identifier."""
         if not server_id:
             return None
-        epurl = next(
-            (part.split("=", 1)[1] for part in episode_id.split("&") if part.startswith("epurl=")),
-            "",
-        )
         headers = {
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "Referer": f"{self.base_url}{epurl}",
@@ -321,6 +310,14 @@ class AniWaves(Source):
         result = data.get("result", {}) if isinstance(data, dict) else {}
         url = result.get("url") if isinstance(result, dict) else None
         return url if isinstance(url, str) and url.startswith(("http://", "https://")) else None
+
+    @staticmethod
+    def _episode_url_from_id(episode_id: str) -> str:
+        """Extract the source-relative episode URL encoded in an episode ID."""
+        marker = "&epurl="
+        if marker not in episode_id:
+            return ""
+        return episode_id.split(marker, 1)[1].split("&", 1)[0]
 
     @staticmethod
     def _resolve_video_type(label: str) -> str:

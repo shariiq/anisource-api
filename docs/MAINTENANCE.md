@@ -308,6 +308,26 @@ For isolated registry tests, construct `ExtensionRuntime` with custom registries
 
 ---
 
+## Performance Engineering and Future Optimizations
+
+Performance improvements must target production code, not diagnostic overhead. Treat benchmarks and `test_deployed.py` as measurement tools: do not weaken their checks, remove timing, or alter their execution model merely to produce lower numbers.
+
+### Current Runtime Baseline
+
+- Linux/Render Uvicorn processes run with `uvloop`; Windows development retains the standard `asyncio` loop because the dependency is platform-guarded.
+- The production Docker image compiles the native Byse Proof-of-Work solver with `gcc -O3 -march=native -funroll-loops`. Its scratch buffer is invocation-local so concurrent `asyncio.to_thread()` calls cannot race.
+- AniWaves and Anikoto episode IDs preserve their source-relative episode path in the `&epurl=` component. Use that component for server referers and embed discovery rather than repeatedly parsing a full composite ID or refetching details.
+
+### Keep in Mind for Future Changes
+
+1. **Measure the actual boundary first.** Separate source request time, embed discovery, extractor selection, hoster network time, playlist parsing, and CPU-bound work. Optimize the measured dominant cost instead of changing test harnesses or adding speculative retries.
+2. **Preserve concurrency safety.** CPU-bound implementations invoked through `asyncio.to_thread()` must use stack-local or otherwise properly synchronized state. Never trade correctness for a shared static buffer without explicit synchronization and a measured benefit.
+3. **Avoid duplicate upstream work.** Carry source-owned opaque IDs through the pipeline and reuse already-derived context (such as `&epurl=`) where it is contractually valid. Do not deduplicate requests whose headers, tokens, or request context differ.
+4. **Keep CPU work within the deployment budget.** Profile representative PoW/decryption inputs with `time.perf_counter()` and retain margin for hoster requests. Optimize the hot loop or native implementation before considering a timeout adjustment.
+5. **Optimize only with deterministic coverage.** Pair a code-path change with narrow tests for parsing, URL construction, registry routing, or concurrency behavior as appropriate. Validate performance claims using a repeatable representative workload.
+
+---
+
 ## Local Checks and PR Validation
 
 Use targeted tests or lint only while debugging a change. The repository hooks are the validation gate:

@@ -62,6 +62,13 @@ venv.bak/
 # Local Claude Code state
 .claude/
 
+# JavaScript dependencies and build output
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+
 # IDE / Editor
 .vscode/
 .idea/

@@ -90,7 +90,9 @@ class AnimeNoSub(Source):
         image = soup.select_one("div.thumb > img, div.limage > img")
         alt = soup.select_one(".alter")
         description_nodes = soup.select(".entry-content[itemprop=description], .desc")
-        status_text = self._info_value(info, "Status")
+
+        info_dict = self._parse_info(info)
+        status_text = info_dict.get("status", "")
         status = "unknown"
         if status_text.lower() == "completed":
             status = "completed"
@@ -112,8 +114,8 @@ class AnimeNoSub(Source):
             if description_nodes
             else "",
             genres=genres,
-            studios=[value] if (value := self._info_value(info, "Studio")) else [],
-            producers=[value] if (value := self._info_value(info, "Fansub")) else [],
+            studios=[info_dict["studio"]] if "studio" in info_dict else [],
+            producers=[info_dict["fansub"]] if "fansub" in info_dict else [],
             alternative_titles=[alt.get_text(" ", strip=True)] if alt else [],
             status=status,
         )
@@ -200,15 +202,32 @@ class AnimeNoSub(Source):
         raise ParsingError("AnimeNoSub server did not contain an embed URL")
 
     @staticmethod
-    def _info_value(container: Tag, label: str) -> str:
+    def _parse_info(container: Tag) -> dict[str, str]:
+        info: dict[str, str] = {}
         for item in container.select("div.spe > span, li:has(b)"):
-            if label.lower() in item.get_text(" ", strip=True).lower():
-                anchor = item.select_one("a")
+            b_tag = item.select_one("b")
+            anchor = item.select_one("a")
+            if b_tag:
+                key = b_tag.get_text(strip=True).rstrip(":").strip().lower()
                 if anchor:
-                    return anchor.get_text(" ", strip=True)
-                text = item.get_text(" ", strip=True)
-                return re.sub(rf"^{re.escape(label)}\s*:?\s*", "", text, flags=re.IGNORECASE)
-        return ""
+                    val = anchor.get_text(" ", strip=True)
+                else:
+                    full_text = item.get_text(" ", strip=True)
+                    val = re.sub(
+                        rf"^{re.escape(b_tag.get_text(strip=True))}\s*:?\s*",
+                        "",
+                        full_text,
+                        flags=re.IGNORECASE,
+                    )
+                info[key] = val
+            else:
+                full_text = item.get_text(" ", strip=True)
+                if ":" in full_text:
+                    label, rest = full_text.split(":", 1)
+                    key = label.strip().lower()
+                    val = anchor.get_text(" ", strip=True) if anchor else rest.strip()
+                    info[key] = val
+        return info
 
     def _image_url(self, image: Tag | None) -> str:
         """Extract image URL, resolving relative paths against base_url."""

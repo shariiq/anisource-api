@@ -63,7 +63,7 @@ async def get_popular(
         items=[AnimeSchema.model_validate(item) for item in page_data.items],
         page=page_data.page,
         has_next=page_data.has_next,
-        total_returned=page_data.total_returned or len(page_data.items),
+        total_returned=page_data.total_returned,
     )
 
 
@@ -106,7 +106,7 @@ async def get_latest(
         items=[AnimeSchema.model_validate(item) for item in page_data.items],
         page=page_data.page,
         has_next=page_data.has_next,
-        total_returned=page_data.total_returned or len(page_data.items),
+        total_returned=page_data.total_returned,
     )
 
 
@@ -150,7 +150,7 @@ async def search_anime(
         items=[AnimeSchema.model_validate(item) for item in page_data.items],
         page=page_data.page,
         has_next=page_data.has_next,
-        total_returned=page_data.total_returned or len(page_data.items),
+        total_returned=page_data.total_returned,
     )
 
 

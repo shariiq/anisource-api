@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from anime_extensions.models import Anime, Episode, Stream, Subtitle
+from anime_extensions.models import Anime, Episode, Page, Stream, Subtitle
+
+
+def test_page_total_returned_tracks_items():
+    """Verify pagination totals remain derived from the current item list."""
+    page = Page(items=["first", "second"], page=1, has_next=True)
+    assert page.total_returned == 2
+
+    page.items.append("third")
+    assert page.total_returned == 3
 
 
 def test_anime_model_creation():

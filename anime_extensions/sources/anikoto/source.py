@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from ...core.runtime import ExtensionContext
 
 log = logging.getLogger(__name__)
+_EPISODE_SUFFIX_RE = re.compile(r"/(?:ep-\d+|episode/\d+)$")
 
 
 class Anikoto(Source):
@@ -189,48 +190,21 @@ class Anikoto(Source):
 
         bmeta = soup.select_one("div.bmeta")
         if bmeta:
-            # Genres
-            genre_div = None
             for div in bmeta.select("div.meta > div"):
-                if "Genres:" in div.get_text():
-                    genre_div = div
-                    break
-            if genre_div:
-                genres = [a.get_text(strip=True) for a in genre_div.select("span a")]
-
-            # Studios
-            studio_div = None
-            for div in bmeta.select("div.meta > div"):
-                if "Studios:" in div.get_text():
-                    studio_div = div
-                    break
-            if studio_div:
-                studios = [a.get_text(strip=True) for a in studio_div.select("span a")]
-
-            # Status
-            status_div = None
-            for div in bmeta.select("div.meta > div"):
-                if "Status:" in div.get_text():
-                    status_div = div
-                    break
-            if status_div:
-                status_text = (
-                    status_div.select_one("span").get_text(strip=True).lower()
-                    if status_div.select_one("span")
-                    else ""
-                )
-
-            # MAL Score
-            mal_div = None
-            for div in bmeta.select("div.meta > div"):
-                if "MAL:" in div.get_text():
-                    mal_div = div
-                    break
-            if mal_div:
-                span = mal_div.select_one("span")
-                if span:
-                    with contextlib.suppress(ValueError):
-                        score = float(span.get_text(strip=True))
+                text = div.get_text(" ", strip=True)
+                if text.startswith("Genres:") or "Genres:" in text:
+                    genres = [a.get_text(strip=True) for a in div.select("span a")]
+                elif text.startswith("Studios:") or "Studios:" in text:
+                    studios = [a.get_text(strip=True) for a in div.select("span a")]
+                elif text.startswith("Status:") or "Status:" in text:
+                    span = div.select_one("span")
+                    if span:
+                        status_text = span.get_text(strip=True).lower()
+                elif text.startswith("MAL:") or "MAL:" in text or "Scores" in text:
+                    span = div.select_one("span")
+                    if span:
+                        with contextlib.suppress(ValueError):
+                            score = float(span.get_text(strip=True).split()[0])
 
         # Determine status
         anime_status = "unknown"
@@ -300,6 +274,7 @@ class Anikoto(Source):
 
         soup = BeautifulSoup(html_result, "html.parser")
         episodes = []
+        clean_path = _EPISODE_SUFFIX_RE.sub("", anime_path)
 
         for a in soup.select("div.episodes ul > li > a"):
             ep_num = a.get("data-num", "")
@@ -333,7 +308,6 @@ class Anikoto(Source):
                     released_at = datetime.fromtimestamp(int(timestamp))
 
             # Build episode ID
-            clean_path = re.sub(r"/ep-\d+$", "", anime_path)
             ep_id = f"{ep_ids}&epurl={clean_path}/ep-{ep_num}"
 
             try:

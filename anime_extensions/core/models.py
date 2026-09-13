@@ -17,7 +17,10 @@ class Page[T]:
     items: list[T]
     page: int
     has_next: bool
-    total_returned: int = 0
+
+    @property
+    def total_returned(self) -> int:
+        return len(self.items)
 
 
 class AnimeStatus(StrEnum):

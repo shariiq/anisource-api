@@ -107,14 +107,26 @@ async def test_extractor_resolution():
 
 
 @pytest.mark.asyncio
-async def test_source_context_injection():
-    """Verify that instantiated sources receive the correct context."""
+async def test_source_context_injection_and_caching():
+    """Verify that instantiated sources receive the correct context and are cached."""
     async with ExtensionRuntime() as runtime:
         runtime.sources.register(MockSource)
-        source = runtime.get_source("mock-source")
 
-        assert source.context.http == runtime.http
-        assert source.context.extractors == runtime.extractors
+        # Test context identity
+        assert runtime.context is runtime.context
+
+        # Test source instantiation and caching
+        source1 = runtime.get_source("mock-source")
+        assert source1 is not None
+        assert source1.context.http == runtime.http
+        assert source1.context.extractors == runtime.extractors
+
+        # Verify subsequent calls return the exact same instance
+        source2 = runtime.get_source("mock-source")
+        assert source1 is source2
+
+        # Verify unknown source returns None
+        assert runtime.get_source("unknown-source") is None
 
 
 @pytest.mark.asyncio

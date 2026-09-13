@@ -1,0 +1,25 @@
+:root {
+  --ink: #120D0F;
+  --ink-soft: #1C1518;
+  --ink-soft-2: #251C20;
+  --line: rgba(244, 236, 226, 0.11);
+  --line-strong: rgba(244, 236, 226, 0.22);
+  --paper: #F4ECE2;
+  --paper-dim: rgba(244, 236, 226, 0.60);
+  --paper-faint: rgba(244, 236, 226, 0.36);
+  --flame: #E6432B;
+  --flame-2: #FF6B4E;
+  --gold: #D8AE6B;
+  --teal: #3FBFAE;
+
+  --font-display: 'Shippori Mincho B1', serif;
+  --font-body: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius: 5px;
+  --radius-lg: 8px;
+
+  --gutter: clamp(18px, 4vw, 48px);
+  --dur: 220ms;
+  --ease: cubic-bezier(.22, .61, .36, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}

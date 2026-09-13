@@ -185,6 +185,30 @@ async def app():
 
 
 @pytest.mark.asyncio
+async def test_cors_allows_configured_frontend_origin():
+    """Expose API responses to an explicitly configured frontend origin."""
+    frontend_origin = "https://frontend.example.test"
+    app = create_app(APISettings(cors_origins=[frontend_origin]))
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        preflight = await client.options(
+            "/openapi.json",
+            headers={
+                "Origin": frontend_origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        response = await client.get("/openapi.json", headers={"Origin": frontend_origin})
+
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == frontend_origin
+    assert "GET" in preflight.headers["access-control-allow-methods"]
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == frontend_origin
+
+
+@pytest.mark.asyncio
 async def test_api_production_lifespan():
     """Verify the production lifespan owns runtime and cache lifecycles."""
     app = create_app()

@@ -258,16 +258,32 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     # ==========================================================================
 
     class UIStaticFiles(StaticFiles):
-        """Static file server that serves anisource.html as the root application index."""
+        """Serve the built SPA and resolve client-side routes to its index."""
 
         async def get_response(self, path: str, scope: Scope) -> Response:
-            if path in ("", ".", "/"):
-                path = "anisource.html"
-            return await super().get_response(path, scope)
+            requested_path = path.strip("/")
+            if requested_path in ("", "."):
+                path = (
+                    "app/index.html"
+                    if (static_dir / "app" / "index.html").exists()
+                    else "anisource.html"
+                )
+            else:
+                candidate = static_dir / requested_path
+                if not candidate.exists() and (static_dir / "app" / "index.html").exists():
+                    path = "app/index.html"
+
+            response = await super().get_response(path, scope)
+            if path == "app/index.html":
+                response.headers["Cache-Control"] = "no-cache"
+            elif "." in Path(path).name:
+                # Vite asset filenames are content-hashed and safe to cache immutably.
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
 
     static_dir = Path(__file__).resolve().parent / "static"
     if static_dir.exists():
-        # Mounted last so API endpoints are never shadowed
+        # Mounted last so API endpoints are never shadowed.
         app.mount("/", UIStaticFiles(directory=static_dir, html=False), name="static")
 
     return app

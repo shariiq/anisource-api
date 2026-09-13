@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
@@ -48,11 +48,12 @@ class VidMolyExtractor(Extractor):
             log.warning("VidMoly request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(html)
         script_text = ""
-        for s in doc.find_all("script"):
-            if s.string and "sources" in s.string:
-                script_text = s.string
+        for script in tree.css("script"):
+            content = script.text()
+            if "sources" in content:
+                script_text = content
                 break
 
         if not script_text:

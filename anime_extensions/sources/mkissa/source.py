@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ...core.errors import CryptoError, ExtractorError, HttpError, ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
@@ -708,9 +708,7 @@ class MKissa(Source):
         raw_description = show.get("description")
         description = ""
         if isinstance(raw_description, str):
-            description = BeautifulSoup(
-                raw_description.replace("<br>", "\n"), "html.parser"
-            ).get_text()
+            description = HTMLParser(raw_description.replace("<br>", "\n")).text()
         season = show.get("season") or "-"
         if isinstance(season, Mapping):
             season = (

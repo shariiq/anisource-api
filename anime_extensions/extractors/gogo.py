@@ -8,9 +8,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlparse
 
-from bs4 import BeautifulSoup
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from selectolax.parser import HTMLParser
 
 from ..core.errors import ExtractorError
 from ..core.extractor import Extractor
@@ -82,25 +82,44 @@ class GogoStreamExtractor(Extractor):
                     raise ExtractorError(f"GogoStream: failed to fetch page, status {resp.status}")
                 text = await resp.text(errors="replace")
 
-            soup = BeautifulSoup(text, "html.parser")
+            tree = HTMLParser(text)
 
-            wrapper = soup.find("div", class_=lambda c: c and "container-" in c) or soup.find(
-                "div", class_="wrapper"
-            )
-            body = soup.find("body", class_=lambda c: c and "container-" in c) or soup.find("body")
-            videocontent = soup.find(
-                "div", class_=lambda c: c and "videocontent-" in c
-            ) or soup.find("div", class_="videocontent")
-            script_data = soup.find("script", {"data-value": True})
+            wrapper = next(
+                (
+                    node
+                    for node in tree.css("div")
+                    if "container-" in node.attributes.get("class", "")
+                ),
+                None,
+            ) or tree.css_first("div.wrapper")
+            body = next(
+                (
+                    node
+                    for node in tree.css("body")
+                    if "container-" in node.attributes.get("class", "")
+                ),
+                None,
+            ) or tree.css_first("body")
+            videocontent = next(
+                (
+                    node
+                    for node in tree.css("div")
+                    if "videocontent-" in node.attributes.get("class", "")
+                ),
+                None,
+            ) or tree.css_first("div.videocontent")
+            script_data = tree.css_first("script[data-value]")
 
             if not wrapper or not body or not videocontent or not script_data:
                 log.warning("GogoStream: required crypto elements not found in %s", url)
                 return []
 
-            iv = self._get_bytes_after(wrapper.get("class", []), "container-")
-            secret_key = self._get_bytes_after(body.get("class", []), "container-")
-            decryption_key = self._get_bytes_after(videocontent.get("class", []), "videocontent-")
-            encrypted_data = script_data.get("data-value", "")
+            iv = self._get_bytes_after(wrapper.attributes.get("class", ""), "container-")
+            secret_key = self._get_bytes_after(body.attributes.get("class", ""), "container-")
+            decryption_key = self._get_bytes_after(
+                videocontent.attributes.get("class", ""), "videocontent-"
+            )
+            encrypted_data = script_data.attributes.get("data-value", "")
 
             if not isinstance(encrypted_data, str) or not encrypted_data:
                 return []

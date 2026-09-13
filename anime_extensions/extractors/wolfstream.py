@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any
 
-from bs4 import BeautifulSoup
+from selectolax.parser import HTMLParser
 
 from ..core.errors import HttpError, ParsingError
 from ..core.extractor import Extractor
@@ -37,12 +37,12 @@ class WolfStreamExtractor(Extractor):
             log.warning("WolfStream request failed: %s", e)
             raise
 
-        doc = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(html)
         script_text = ""
 
         # Find script containing sources
-        for script in doc.find_all("script"):
-            text = script.string
+        for script in tree.css("script"):
+            text = script.text()
             if text and "sources" in text:
                 script_text = text
                 break

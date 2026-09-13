@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup, Tag
+from selectolax.parser import HTMLParser, Node
 
 from ...core.errors import ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
@@ -59,13 +59,13 @@ class AnimeNoSub(Source):
         return Page(items=items, page=page, has_next=has_next)
 
     def _parse_listing(self, html: str) -> tuple[list[Anime], bool]:
-        soup = BeautifulSoup(html, "html.parser")
+        tree = HTMLParser(html)
         items: list[Anime] = []
-        for anchor in soup.select("div.listupd article a.tip"):
-            href = anchor.get("href", "")
-            title_element = anchor.select_one("div.tt, div.ttl")
-            title = title_element.get_text(" ", strip=True) if title_element else ""
-            image = anchor.select_one("img")
+        for anchor in tree.css("div.listupd article a.tip"):
+            href = anchor.attributes.get("href", "")
+            title_element = anchor.css_first("div.tt, div.ttl")
+            title = title_element.text(separator=" ", strip=True) if title_element else ""
+            image = anchor.css_first("img")
             if not href or not title:
                 continue
             items.append(
@@ -76,20 +76,20 @@ class AnimeNoSub(Source):
                     thumbnail=self._image_url(image),
                 )
             )
-        has_next = bool(soup.select_one("div.pagination a.next, div.hpage > a.r"))
+        has_next = bool(tree.css_first("div.pagination a.next, div.hpage > a.r"))
         return items, has_next
 
     async def get_details(self, anime_id: str) -> Anime:
         path = self._anime_path(anime_id)
         url = urljoin(self.base_url, path)
-        soup = BeautifulSoup(await self.context.http.get(url), "html.parser")
-        title_el = soup.select_one("h1.entry-title")
-        info = soup.select_one("div.info-content, div.right ul.data")
+        tree = HTMLParser(await self.context.http.get(url))
+        title_el = tree.css_first("h1.entry-title")
+        info = tree.css_first("div.info-content, div.right ul.data")
         if title_el is None or info is None:
             raise ParsingError(f"AnimeNoSub returned unusable details content for {anime_id}")
-        image = soup.select_one("div.thumb > img, div.limage > img")
-        alt = soup.select_one(".alter")
-        description_nodes = soup.select(".entry-content[itemprop=description], .desc")
+        image = tree.css_first("div.thumb > img, div.limage > img")
+        alt = tree.css_first(".alter")
+        description_nodes = tree.css(".entry-content[itemprop=description], .desc")
 
         info_dict = self._parse_info(info)
         status_text = info_dict.get("status", "")
@@ -98,56 +98,56 @@ class AnimeNoSub(Source):
             status = "completed"
         elif status_text.lower() == "ongoing":
             status = "ongoing"
-        genres = [item.get_text(" ", strip=True) for item in info.select("div.genxed > a")]
+        genres = [item.text(separator=" ", strip=True) for item in info.css("div.genxed > a")]
         if not genres:
-            for item in info.select("li"):
-                if "genre" in item.get_text(" ", strip=True).lower():
-                    genres = [anchor.get_text(" ", strip=True) for anchor in item.select("a")]
+            for item in info.css("li"):
+                if "genre" in item.text(separator=" ", strip=True).lower():
+                    genres = [anchor.text(separator=" ", strip=True) for anchor in item.css("a")]
                     break
 
         return Anime(
             id=self._id_from_url(url),
-            title=title_el.get_text(" ", strip=True),
+            title=title_el.text(separator=" ", strip=True),
             url=url,
             thumbnail=self._image_url(image),
-            description=description_nodes[-1].get_text(" ", strip=True)
+            description=description_nodes[-1].text(separator=" ", strip=True)
             if description_nodes
             else "",
             genres=genres,
             studios=[info_dict["studio"]] if "studio" in info_dict else [],
             producers=[info_dict["fansub"]] if "fansub" in info_dict else [],
-            alternative_titles=[alt.get_text(" ", strip=True)] if alt else [],
+            alternative_titles=[alt.text(separator=" ", strip=True)] if alt else [],
             status=status,
         )
 
     async def get_episodes(self, anime_id: str) -> list[Episode]:
         path = self._anime_path(anime_id)
-        soup = BeautifulSoup(
-            await self.context.http.get(urljoin(self.base_url, path)), "html.parser"
-        )
+        tree = HTMLParser(await self.context.http.get(urljoin(self.base_url, path)))
         episodes: list[Episode] = []
-        for anchor in soup.select("div.eplister > ul > li > a"):
-            number_el = anchor.select_one(".epl-num")
-            href = anchor.get("href", "")
+        for anchor in tree.css("div.eplister > ul > li > a"):
+            number_el = anchor.css_first(".epl-num")
+            href = anchor.attributes.get("href", "")
             if not number_el or not href:
                 continue
-            number_text = number_el.get_text(" ", strip=True)
+            number_text = number_el.text(separator=" ", strip=True)
             match = re.search(r"\d+(?:\.\d+)?", number_text)
             number = float(match.group()) if match else 0.0
-            title_el = anchor.select_one("div.epl-title")
-            title = title_el.get_text(" ", strip=True) if title_el else ""
+            title_el = anchor.css_first("div.epl-title")
+            title = title_el.text(separator=" ", strip=True) if title_el else ""
             default = f"Ep. {number_text}"
             if title and f"Episode {number_text}".lower() not in title.lower():
                 default = f"{default} {title}"
-            scanlator_el = anchor.select_one(".epl-sub")
-            date_el = anchor.select_one(".epl-date")
-            released_at = self._parse_date(date_el.get_text(" ", strip=True)) if date_el else None
+            scanlator_el = anchor.css_first(".epl-sub")
+            date_el = anchor.css_first(".epl-date")
+            released_at = (
+                self._parse_date(date_el.text(separator=" ", strip=True)) if date_el else None
+            )
             episodes.append(
                 Episode(
                     id=urljoin(self.base_url, href),
                     number=number,
                     title=default,
-                    scanlator=scanlator_el.get_text(" ", strip=True) if scanlator_el else "",
+                    scanlator=scanlator_el.text(separator=" ", strip=True) if scanlator_el else "",
                     has_sub=True,
                     released_at=released_at,
                 )
@@ -155,15 +155,19 @@ class AnimeNoSub(Source):
         return episodes
 
     async def get_servers(self, episode_id: str) -> list[Server]:
-        soup = BeautifulSoup(await self.context.http.get(episode_id), "html.parser")
+        tree = HTMLParser(await self.context.http.get(episode_id))
         servers: list[Server] = []
         for index, element in enumerate(
-            soup.select("select.mirror > option[data-index], ul.mirror a[data-em]")
+            tree.css("select.mirror > option[data-index], ul.mirror a[data-em]")
         ):
-            encoded = element.get("value") if element.name == "option" else element.get("data-em")
+            encoded = (
+                element.attributes.get("value")
+                if element.tag == "option"
+                else element.attributes.get("data-em")
+            )
             if not encoded:
                 continue
-            name = element.get_text(" ", strip=True) or f"Server {index + 1}"
+            name = element.text(separator=" ", strip=True) or f"Server {index + 1}"
             servers.append(Server(id=encoded, name=name, type="sub"))
         return servers
 
@@ -188,13 +192,13 @@ class AnimeNoSub(Source):
                 html = base64.b64decode(encoded).decode("utf-8")
             except (ValueError, UnicodeDecodeError) as exc:
                 raise ParsingError("AnimeNoSub returned an invalid encoded server") from exc
-        soup = BeautifulSoup(html, "html.parser")
-        frame = soup.select_one("iframe[src]")
-        if frame and frame.get("src"):
-            return urljoin(self.base_url, frame.get("src", ""))
-        meta = soup.select_one("meta[itemprop=embedUrl][content]")
-        if meta and meta.get("content"):
-            return urljoin(self.base_url, meta.get("content", ""))
+        tree = HTMLParser(html)
+        frame = tree.css_first("iframe[src]")
+        if frame and frame.attributes.get("src"):
+            return urljoin(self.base_url, frame.attributes.get("src", ""))
+        meta = tree.css_first("meta[itemprop=embedUrl][content]")
+        if meta and meta.attributes.get("content"):
+            return urljoin(self.base_url, meta.attributes.get("content", ""))
         if encoded.startswith(("http://", "https://")):
             parsed = urlparse(encoded)
             if parsed.scheme and parsed.netloc:
@@ -202,42 +206,45 @@ class AnimeNoSub(Source):
         raise ParsingError("AnimeNoSub server did not contain an embed URL")
 
     @staticmethod
-    def _parse_info(container: Tag) -> dict[str, str]:
+    def _parse_info(container: Node) -> dict[str, str]:
         info: dict[str, str] = {}
-        for item in container.select("div.spe > span, li:has(b)"):
-            b_tag = item.select_one("b")
-            anchor = item.select_one("a")
+        for item in container.css("div.spe > span, li"):
+            if item.tag == "li" and not item.css_first("b"):
+                continue
+            b_tag = item.css_first("b")
+            anchor = item.css_first("a")
             if b_tag:
-                key = b_tag.get_text(strip=True).rstrip(":").strip().lower()
+                b_text = b_tag.text(strip=True)
+                key = b_text.rstrip(":").strip().lower()
                 if anchor:
-                    val = anchor.get_text(" ", strip=True)
+                    val = anchor.text(separator=" ", strip=True)
                 else:
-                    full_text = item.get_text(" ", strip=True)
+                    full_text = item.text(separator=" ", strip=True)
                     val = re.sub(
-                        rf"^{re.escape(b_tag.get_text(strip=True))}\s*:?\s*",
+                        rf"^{re.escape(b_text)}\s*:?\s*",
                         "",
                         full_text,
                         flags=re.IGNORECASE,
                     )
                 info[key] = val
             else:
-                full_text = item.get_text(" ", strip=True)
+                full_text = item.text(separator=" ", strip=True)
                 if ":" in full_text:
                     label, rest = full_text.split(":", 1)
                     key = label.strip().lower()
-                    val = anchor.get_text(" ", strip=True) if anchor else rest.strip()
+                    val = anchor.text(separator=" ", strip=True) if anchor else rest.strip()
                     info[key] = val
         return info
 
-    def _image_url(self, image: Tag | None) -> str:
+    def _image_url(self, image: Node | None) -> str:
         """Extract image URL, resolving relative paths against base_url."""
         if image is None:
             return ""
         raw = (
-            image.get("data-src")
-            or image.get("data-lazy-src")
-            or image.get("srcset", "").split(" ")[0]
-            or image.get("src", "")
+            image.attributes.get("data-src")
+            or image.attributes.get("data-lazy-src")
+            or image.attributes.get("srcset", "").split(" ")[0]
+            or image.attributes.get("src", "")
         ).split("?resize")[0]
         return urljoin(self.base_url, raw) if raw else ""
 

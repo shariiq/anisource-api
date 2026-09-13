@@ -21,46 +21,18 @@ export function isNativeHlsSupported(video: HTMLVideoElement): boolean {
 }
 
 export function initializeHls(options: InitHlsOptions): HlsController {
-  const hls = new Hls({
-    enableWorker: true,
-    lowLatencyMode: false,
-    backBufferLength: 120,
-    maxBufferLength: 30,
-    maxMaxBufferLength: 60,
-    startFragPrefetch: true,
-  });
+  // Keep this initialization deliberately aligned with the known-good standalone
+  // player. Provider playlists can be sensitive to speculative fragment loading
+  // and recovery attempts while the media element is still attaching.
+  const hls = new Hls();
 
   hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
-    if (options.onManifestParsed) {
-      options.onManifestParsed(data.levels);
-    }
+    options.onManifestParsed?.(data.levels);
   });
 
-  let networkRecoveryUsed = false;
-  let mediaRecoveryUsed = false;
-
   hls.on(Hls.Events.ERROR, (_, data) => {
-    if (!data.fatal) {
-      options.onError?.(data.type, data.details, false);
-      return;
-    }
-
-    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !networkRecoveryUsed) {
-      networkRecoveryUsed = true;
-      hls.startLoad();
-      options.onError?.(data.type, `${data.details}; retrying once`, false);
-      return;
-    }
-
-    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRecoveryUsed) {
-      mediaRecoveryUsed = true;
-      hls.recoverMediaError();
-      options.onError?.(data.type, `${data.details}; recovering once`, false);
-      return;
-    }
-
-    options.onError?.(data.type, data.details, true);
-    hls.destroy();
+    options.onError?.(data.type, data.details, data.fatal);
+    if (data.fatal) hls.destroy();
   });
 
   hls.loadSource(options.url);

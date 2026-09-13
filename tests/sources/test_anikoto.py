@@ -1,10 +1,15 @@
 """Deterministic tests for Anikoto HTML and VRF parsing."""
 
+import base64
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from anime_extensions.models import Anime, Server
+from anime_extensions.core.errors import ParsingError
+from anime_extensions.models import Anime, Server, Stream, Subtitle
 from anime_extensions.sources.anikoto import Anikoto, vrf_encrypt
 
 LISTING_HTML = """
@@ -153,3 +158,103 @@ def test_resolve_video_type(source: Anikoto):
     assert source._resolve_video_type("hsub") == "h-sub"
     assert source._resolve_video_type("sub") == "sub"
     assert source._resolve_video_type("unknown") == "sub"
+
+
+def _encrypt_megaplay_payload(payload: dict) -> str:
+    """Helper to encrypt test payloads matching MegaPlay AES-CBC cipher."""
+    plaintext = json.dumps(payload).encode("utf-8")
+    pad_len = 16 - (len(plaintext) % 16)
+    padded = plaintext + bytes([pad_len]) * pad_len
+    key = b"i?LMTAx0Q6,:}50U".ljust(32, b"\0")[:32]
+    iv = b"W0;27ToaUpl_P%'c"
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend()).encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+    return base64.b64encode(ciphertext).decode("utf-8").replace("+", "-").replace("/", "_")
+
+
+def test_decrypt_megaplay_sources_success():
+    """Test MegaPlay AES-CBC decryption with dual payload shapes."""
+    # Test shape with "file"
+    enc_file = _encrypt_megaplay_payload({"file": "https://server.test/master.m3u8"})
+    decrypted_file = Anikoto._decrypt_megaplay_sources(enc_file)
+    assert decrypted_file == {"file": "https://server.test/master.m3u8"}
+
+    # Test shape with "sources"
+    enc_sources = _encrypt_megaplay_payload(
+        {"sources": [{"file": "https://server.test/master.m3u8"}]}
+    )
+    decrypted_sources = Anikoto._decrypt_megaplay_sources(enc_sources)
+    assert decrypted_sources == {"sources": [{"file": "https://server.test/master.m3u8"}]}
+
+
+def test_decrypt_megaplay_sources_invalid():
+    """Test invalid payloads return None gracefully."""
+    assert Anikoto._decrypt_megaplay_sources("") is None
+    assert Anikoto._decrypt_megaplay_sources(None) is None
+    assert Anikoto._decrypt_megaplay_sources("invalid-base64-payload!!!") is None
+    assert Anikoto._decrypt_megaplay_sources(12345) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_sources_from_api_decryption_and_subtitles(source: Anikoto):
+    """Test _fetch_sources_from_api decrypts enc payload and extracts subtitles."""
+    enc = _encrypt_megaplay_payload({"file": "https://stream.host/master.m3u8"})
+    api_response = {
+        "enc": enc,
+        "tracks": [
+            {"kind": "captions", "file": "https://sub.host/en.vtt", "label": "English"},
+            {"kind": "thumbnails", "file": "https://sub.host/thumb.vtt"},
+        ],
+    }
+    source._get_json = AsyncMock(return_value=api_response)
+    source._parse_m3u8 = AsyncMock(
+        return_value=[Stream(url="https://stream.host/master.m3u8", quality="auto")]
+    )
+
+    streams = await source._fetch_sources_from_api(
+        data_id="12345",
+        host="megaplay.buzz",
+        embed_url="https://megaplay.buzz/stream/s-1/12345/sub",
+        server_id="srv-1",
+    )
+
+    assert len(streams) == 1
+    assert streams[0].url == "https://stream.host/master.m3u8"
+    source._parse_m3u8.assert_awaited_once()
+    args, kwargs = source._parse_m3u8.call_args
+    assert args[0] == "https://stream.host/master.m3u8"
+    assert args[2] == "https://megaplay.buzz/"
+    assert len(args[3]) == 1
+    assert isinstance(args[3][0], Subtitle)
+    assert args[3][0].url == "https://sub.host/en.vtt"
+    assert args[3][0].label == "English"
+
+
+@pytest.mark.asyncio
+async def test_parse_m3u8_headers_and_parsing_error(source: Anikoto):
+    """Test _parse_m3u8 sends Origin/Referer headers and raises on non-HLS."""
+    m3u8_content = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1280000,RESOLUTION=1280x720\n720p.m3u8\n"
+    source._request = AsyncMock(return_value=m3u8_content)
+
+    streams = await source._parse_m3u8(
+        m3u8_url="https://stream.host/path/master.m3u8",
+        server_id="srv-1",
+        referer="https://megaplay.buzz/stream/s-1/12345/sub",
+        subtitles=[Subtitle(url="https://sub.host/en.vtt", label="English")],
+    )
+
+    assert len(streams) == 1
+    assert streams[0].quality == "720p"
+    assert streams[0].url == "https://stream.host/path/720p.m3u8"
+    assert streams[0].headers["Referer"] == "https://megaplay.buzz/stream/s-1/12345/sub"
+    assert streams[0].headers["Origin"] == "https://stream.host"
+
+    # Assert non-HLS payload raises ParsingError
+    source._request = AsyncMock(return_value="<html>Access Denied</html>")
+    with pytest.raises(ParsingError, match="expected an HLS playlist"):
+        await source._parse_m3u8(
+            m3u8_url="https://stream.host/path/master.m3u8",
+            server_id="srv-1",
+            referer="https://megaplay.buzz/",
+            subtitles=[],
+        )

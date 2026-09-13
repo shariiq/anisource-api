@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import json
 import logging
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from bs4 import BeautifulSoup
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-from ...core.errors import ExtractorError
+from ...core.errors import ExtractorError, ParsingError
 from ...core.metadata import SourceCapability, SourceMetadata
 from ...core.source import Source
 from ...models import Anime, Episode, Page, Server, Stream, Subtitle
 from ...utils.crypto import vrf_encrypt
+from ...utils.m3u8 import parse_m3u8_streams
 
 if TYPE_CHECKING:
     from ...core.runtime import ExtensionContext
@@ -541,12 +545,10 @@ class Anikoto(Source):
         embed_url: str,
         server_id: str,
     ) -> list[Stream]:
-        """Fetch sources from the getSources/getSourcesNew API."""
+        """Fetch and decrypt sources from the MegaPlay API."""
         # Determine stream type from URL path
-        path_segments = embed_url.split("/")
-        stream_type = ""
-        if path_segments[-1] in ("sub", "dub", "hsub"):
-            stream_type = path_segments[-1]
+        path_segments = embed_url.rstrip("/").split("/")
+        stream_type = path_segments[-1] if path_segments[-1] in ("sub", "dub", "hsub") else ""
 
         api_headers = {
             "Accept": "*/*",
@@ -555,66 +557,90 @@ class Anikoto(Source):
             "Origin": f"https://{host}",
         }
 
-        # Try getSources first
         data = None
-
-        api_url = f"https://{host}/stream/getSources?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
-        try:
-            resp_data = await self._get_json(api_url, headers=api_headers)
-            if isinstance(resp_data, dict):
-                src = resp_data.get("sources")
-                # Valid if it's a dict with file or a valid list/string URL
-                if (
-                    (isinstance(src, dict) and src.get("file"))
-                    or (isinstance(src, list) and src and str(src[0]).startswith("http"))
-                    or (isinstance(src, str) and src.startswith("http"))
-                ):
-                    data = resp_data
-        except Exception:
-            data = None
-
-        # Fall back to getSourcesNew
-        if data is None:
-            api_url = f"https://{host}/stream/getSourcesNew?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
+        for endpoint in ("getSources", "getSourcesNew"):
+            api_url = (
+                f"https://{host}/stream/{endpoint}"
+                f"?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
+            )
             try:
                 resp_data = await self._get_json(api_url, headers=api_headers)
-                if isinstance(resp_data, dict):
-                    data = resp_data
             except Exception:
-                data = None
+                continue
+            if not isinstance(resp_data, dict):
+                continue
+            if resp_data.get("enc"):
+                decrypted = self._decrypt_megaplay_sources(resp_data["enc"])
+                if decrypted:
+                    resp_data = {**resp_data, **decrypted}
+            source_value = resp_data.get("sources", resp_data.get("file"))
+            if self._has_source_url(source_value):
+                data = resp_data
+                break
 
         if not data:
             return []
 
-        sources = data.get("sources", "")
-        if not sources:
+        source_value = data.get("sources", data.get("file"))
+        if isinstance(source_value, dict):
+            m3u8_url = source_value.get("file", "")
+        elif isinstance(source_value, str):
+            m3u8_url = source_value
+        elif isinstance(source_value, list):
+            m3u8_url = source_value[0] if source_value else ""
+        else:
+            m3u8_url = ""
+
+        if not isinstance(m3u8_url, str) or not m3u8_url.startswith("http"):
             return []
 
-        # Handle sources as dict with "file" key or as direct string
-        m3u8_url = ""
-        if isinstance(sources, dict):
-            m3u8_url = sources.get("file", "")
-        elif isinstance(sources, str):
-            m3u8_url = sources
-
-        if not m3u8_url or not m3u8_url.startswith("http"):
-            return []
-
-        # Extract subtitles
         subtitles = []
-        tracks = data.get("tracks", []) or []
-        for track in tracks:
+        for track in data.get("tracks", []) or []:
             if isinstance(track, dict) and track.get("kind") == "captions":
-                subtitles.append(
-                    Subtitle(
-                        url=track.get("file", ""),
-                        label=track.get("label", ""),
-                        language=track.get("label", ""),
+                track_url = track.get("file", "")
+                if isinstance(track_url, str) and track_url.startswith("http"):
+                    subtitles.append(
+                        Subtitle(
+                            url=track_url,
+                            label=track.get("label", ""),
+                            language=track.get("label", ""),
+                        )
                     )
-                )
 
-        # Parse m3u8 for qualities
         return await self._parse_m3u8(m3u8_url, server_id, f"https://{host}/", subtitles)
+
+    @staticmethod
+    def _has_source_url(sources: Any) -> bool:
+        """Return whether an API source value contains a usable URL."""
+        if isinstance(sources, dict):
+            return isinstance(sources.get("file"), str) and sources["file"].startswith("http")
+        if isinstance(sources, str):
+            return sources.startswith("http")
+        if isinstance(sources, list):
+            return bool(sources) and isinstance(sources[0], str) and sources[0].startswith("http")
+        return False
+
+    @staticmethod
+    def _decrypt_megaplay_sources(encoded: Any) -> dict[str, Any] | None:
+        """Decrypt MegaPlay's URL-safe Base64 AES-CBC response payload."""
+        if not isinstance(encoded, str) or not encoded:
+            return None
+        try:
+            encoded = encoded.replace("-", "+").replace("_", "/")
+            ciphertext = base64.b64decode(encoded + "=" * (-len(encoded) % 4))
+            key = b"i?LMTAx0Q6,:}50U".ljust(32, b"\0")[:32]
+            iv = b"W0;27ToaUpl_P%'c"
+            decryptor = Cipher(
+                algorithms.AES(key), modes.CBC(iv), backend=default_backend()
+            ).decryptor()
+            plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+            padding = plaintext[-1]
+            if 1 <= padding <= 16 and plaintext.endswith(bytes([padding]) * padding):
+                plaintext = plaintext[:-padding]
+            payload = json.loads(plaintext.decode("utf-8"))
+        except ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError:
+            return None
+        return payload if isinstance(payload, dict) else {"sources": payload}
 
     async def _fetch_sources_from_page(
         self,
@@ -714,73 +740,26 @@ class Anikoto(Source):
         referer: str,
         subtitles: list[Subtitle],
     ) -> list[Stream]:
-        """Parse m3u8 playlist and extract stream URLs with qualities."""
-        from urllib.parse import urljoin
+        """Fetch and parse an HLS playlist with host-required request headers."""
+        from urllib.parse import urlparse
 
-        headers = {
-            "Referer": referer,
-        }
+        host = urlparse(m3u8_url).netloc
+        origin = f"https://{host}" if host else None
+        headers = {"Referer": referer}
+        if origin:
+            headers["Origin"] = origin
 
-        try:
-            body = await self._request(m3u8_url, headers=headers)
-        except Exception:
-            return []
-
-        streams = []
-        base_url = m3u8_url.rsplit("/", 1)[0] + "/"
-
+        body = await self._request(m3u8_url, headers=headers)
         if not body.lstrip().startswith("#EXTM3U"):
-            return []
+            raise ParsingError(f"Anikoto: expected an HLS playlist from {m3u8_url}")
 
-        lines = body.split("\n")
-        if not any(line.lstrip().startswith("#EXT-X-STREAM-INF:") for line in lines):
-            return [
-                Stream(
-                    url=m3u8_url,
-                    quality="HLS",
-                    headers={"Referer": referer},
-                    subtitles=subtitles,
-                )
-            ]
-
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            if line.startswith("#EXT-X-STREAM-INF:"):
-                # Parse quality info
-                quality = "Unknown"
-                resolution_match = re.search(r"RESOLUTION=(\d+x\d+)", line)
-                if resolution_match:
-                    resolution = resolution_match.group(1)
-                    height = resolution.split("x")[1]
-                    quality = f"{height}p"
-
-                # Get bandwidth for additional quality info
-                re.search(r"BANDWIDTH=(\d+)", line)
-
-                i += 1
-                if i < len(lines):
-                    stream_url = lines[i].strip()
-                    if stream_url:
-                        # Resolve relative URLs
-                        if not stream_url.startswith("http"):
-                            stream_url = urljoin(base_url, stream_url)
-
-                        # Determine codec/type from bandwidth
-                        if "dub" in server_id.lower() or "dub" in str(server_id).lower():
-                            pass
-
-                        streams.append(
-                            Stream(
-                                url=stream_url,
-                                quality=quality,
-                                headers={"Referer": referer},
-                                subtitles=subtitles,
-                            )
-                        )
-            i += 1
-
-        return streams
+        return parse_m3u8_streams(
+            body,
+            m3u8_url,
+            referer=referer,
+            subtitles=subtitles,
+            default_headers=headers,
+        )
 
     def _resolve_url(self, url: str, base: str) -> str:
         """Resolve relative URL against base."""

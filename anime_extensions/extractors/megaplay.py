@@ -139,26 +139,38 @@ class MegaPlayExtractor(Extractor):
         }
 
         data = None
+        fallback_data = None
         for endpoint in ("getSources", "getSourcesNew"):
-            api_url = (
-                f"https://{host}/stream/{endpoint}"
-                f"?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
-            )
-            try:
-                resp_data = await self.context.http.get_json(api_url, headers=api_headers)
-            except Exception:
-                continue
-            if not isinstance(resp_data, dict):
-                continue
-            if resp_data.get("enc"):
-                decrypted = self._decrypt_megaplay_sources(resp_data["enc"])
-                if decrypted:
-                    resp_data = {**resp_data, **decrypted}
-            source_value = resp_data.get("sources", resp_data.get("file"))
-            if self._has_source_url(source_value):
-                data = resp_data
+            for s_val in ("bcdn", "tcdn", None):
+                query = f"?id={data_id}&id={data_id}&type={stream_type}&type={stream_type}"
+                if s_val:
+                    query += f"&s={s_val}"
+                else:
+                    query += "&bypass=yes"
+
+                api_url = f"https://{host}/stream/{endpoint}{query}"
+                try:
+                    resp_data = await self.context.http.get_json(api_url, headers=api_headers)
+                except Exception:
+                    continue
+                if not isinstance(resp_data, dict):
+                    continue
+                if resp_data.get("enc"):
+                    decrypted = self._decrypt_megaplay_sources(resp_data["enc"])
+                    if decrypted:
+                        resp_data = {**resp_data, **decrypted}
+                source_value = resp_data.get("sources", resp_data.get("file"))
+                if self._has_source_url(source_value):
+                    url_candidate = self._extract_first_url(source_value)
+                    if "fetch.nexabloom.top" not in url_candidate:
+                        data = resp_data
+                        break
+                    if fallback_data is None:
+                        fallback_data = resp_data
+            if data:
                 break
 
+        data = data or fallback_data
         if not data:
             return []
 
@@ -191,7 +203,7 @@ class MegaPlayExtractor(Extractor):
         # Return the raw master playlist URL with the embed-bound upstream headers.
         # The FastAPI layer wraps it in a proxy for playback.
         return self._return_master_stream(
-            m3u8_url, f"https://{host}", embed_url, quality_prefix, subs
+            m3u8_url, f"https://{host}", f"https://{host}/", quality_prefix, subs
         )
 
     async def _fetch_sources_from_page(
@@ -255,6 +267,17 @@ class MegaPlayExtractor(Extractor):
         if isinstance(sources, list):
             return bool(sources) and isinstance(sources[0], str) and sources[0].startswith("http")
         return False
+
+    @staticmethod
+    def _extract_first_url(sources: Any) -> str:
+        """Extract the first URL from an API source value."""
+        if isinstance(sources, dict):
+            return sources.get("file", "")
+        if isinstance(sources, str):
+            return sources
+        if isinstance(sources, list) and sources:
+            return sources[0]
+        return ""
 
     @staticmethod
     def _decrypt_megaplay_sources(encoded: Any) -> dict[str, Any] | None:

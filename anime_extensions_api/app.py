@@ -20,6 +20,7 @@ from anime_extensions.exceptions import (
     UnsupportedCapabilityError,
     UpstreamNotFound,
     UpstreamRateLimited,
+    UpstreamUnreachable,
 )
 from anime_extensions.exceptions import (
     TimeoutError as ExtensionTimeoutError,
@@ -142,6 +143,14 @@ def create_app(settings: APISettings | None = None) -> FastAPI:
     ) -> JSONResponse:
         return _upstream_error_response(
             request, status.HTTP_429_TOO_MANY_REQUESTS, "UPSTREAM_RATE_LIMITED", str(exc)
+        )
+
+    @app.exception_handler(UpstreamUnreachable)
+    async def upstream_unreachable_handler(
+        request: Request, exc: UpstreamUnreachable
+    ) -> JSONResponse:
+        return _upstream_error_response(
+            request, status.HTTP_503_SERVICE_UNAVAILABLE, "UPSTREAM_UNREACHABLE", str(exc)
         )
 
     @app.exception_handler(ExtensionTimeoutError)

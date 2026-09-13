@@ -19,6 +19,23 @@ A scraper must not create or close its own `aiohttp.ClientSession`. Use `self.co
 
 TLS certificate verification is enabled by default. Do not disable it globally to work around one upstream. If an integration has a legitimate compatibility requirement, isolate and document that exception as narrowly as possible.
 
+## Core Boundaries and Proxies
+
+### Source vs. Extractor Responsibility
+The architecture enforces a strict handoff between discovery and extraction:
+
+- **Sources (`anime_extensions/sources/`)** locate and normalize the server's embed URL or hoster ID.
+- **Extractors (`anime_extensions/extractors/`)** resolve that embed into direct, playable media streams, including hoster-specific requests, token/key derivation, decryption, and playlist parsing.
+
+Do not put hoster extraction or player-token parsing in a source. A source must not bypass the extractor registry to compensate for an extractor defect.
+
+### Stream Playability and HLS Proxies
+A plausible `.m3u8` or `.mp4` URL is not a successful extraction; it must be playable. Protected CDNs commonly require exact `Referer`, `Origin`, `User-Agent`, or hoster-auth headers.
+
+- Trace Kotlin's `headersBuilder()` and stream parsing path, then attach every required playback header to the returned `Stream`.
+- The API HLS proxy can forward headers; it cannot repair a stream whose extractor omitted them. Those headers must work for the proxy's manifest and segment requests.
+- Treat a playback 403 as a request-parity investigation: compare the extractor's final URL and headers with Kotlin before classifying the upstream as unavailable.
+
 ## Source Pipeline
 
 Every source implements the same asynchronous pipeline:
@@ -49,6 +66,9 @@ When porting an upstream change, preserve the Python contracts rather than repro
 
 ## Evidence-Driven Repair Protocol
 
+### Golden Rule: Kotlin Primacy
+**Assume the Python port is flawed or incomplete until Kotlin evidence rules that out.** Before attributing a failure to an upstream change, trace the complete Kotlin implementation graph, including shared and inherited `lib-multisrc` classes, request helpers, headers, crypto, and hoster extractors. Do not guess from a server label, a single response, or a partial source file.
+
 ### Principle: Verification Must Prove Production Behavior, Not Test-Environment Success
 
 A source or extractor is "verified working" only when:
@@ -64,9 +84,19 @@ A source or extractor is "verified working" only when:
 
 ## Repair and Porting Protocol
 
+
 ### 1. Reproduce the failure in the smallest boundary that isolates the defect
 
-Start with the exact production failure or the narrowest affected test. Identify the first failed pipeline stage:
+**Use Rapid CLI Diagnostics First:**
+Before writing fixtures or adding broad logging, use the bundled diagnostic runner to fan out across the live pipeline and expose the failing boundary quickly.
+
+```bash
+uv run test_deployed.py --local-only -q "<query>"
+```
+
+This isolates true network-unreachable scenarios (reported as SKIPs) from extraction bugs (reported as FAILs). Use this rapid diagnostic to confirm if a failure is reproducible across multiple queries and servers.
+
+Start with the exact production failure and identify the first failed pipeline stage:
 
 - catalog discovery (search/popular/latest parsing);
 - details metadata;
@@ -280,17 +310,19 @@ For isolated registry tests, construct `ExtensionRuntime` with custom registries
 
 ## Local Checks and PR Validation
 
-Before committing, run the repository-wide lint and formatting checks and any changed deterministic test cases:
+Use targeted tests or lint only while debugging a change. The repository hooks are the validation gate:
+
+- `.githooks/pre-commit` runs Ruff linting and formatting checks.
+- `.githooks/pre-push` runs Ruff linting, formatting, bytecode compilation, and the unit-test suite.
+
+Do not duplicate the full hook checks manually when a commit or push will immediately run them. Never bypass a hook; investigate and fix any failure it reports. For targeted local verification, use commands such as:
 
 ```bash
-uv run ruff check .
-uv run ruff format --check .
+uv run ruff check path/to/changed_file.py
 uv run pytest tests/<area>/test_<module>.py::<test_name> -v
 ```
 
-The third command is an example of a narrow local test, not a requirement to run the entire test suite. **Do not run the full local pytest suite or the full live-test suite locally.** Do not alter pre-commit or pre-push hooks to add or remove pytest execution.
-
-Open a pull request after targeted local verification. **GitHub Actions is authoritative** for the complete lint, format, unit-test, live-test, build, and quality matrix.
+**Do not run the full local pytest suite or the full live-test suite locally** as a routine step. Open a pull request after targeted local verification. **GitHub Actions is authoritative** for the complete lint, format, unit-test, live-test, build, and quality matrix.
 
 **When CI fails:**
 

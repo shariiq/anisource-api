@@ -78,7 +78,7 @@ async def test_fetch_sources_from_api_decryption_and_subtitles(extractor: MegaPl
     assert streams[0].url == "https://stream.host/master.m3u8"
     assert streams[0].quality == "Test - Auto"
     assert streams[0].is_hls is True
-    assert streams[0].headers["Referer"] == "https://megaplay.buzz/stream/s-1/12345/sub"
+    assert streams[0].headers["Referer"] == "https://megaplay.buzz/"
     assert streams[0].headers["Origin"] == "https://megaplay.buzz"
 
     assert len(streams[0].subtitles) == 1

@@ -18,14 +18,18 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import aiohttp
+from yarl import URL
 
 from .errors import (
     HttpError,
     ParsingError,
-    TimeoutError,
     UpstreamNotFound,
     UpstreamRateLimited,
     UpstreamUnavailable,
+    UpstreamUnreachable,
+)
+from .errors import (
+    TimeoutError as SdkTimeoutError,
 )
 
 log = logging.getLogger(__name__)
@@ -127,13 +131,27 @@ class HttpClient:
             merged.update(headers)
 
         request = session.get if method == "GET" else session.post
+        # Signed CDN URLs can contain percent-encoded query bytes (notably
+        # ``%2F`` in HMAC signatures).  ``aiohttp``/``yarl`` normalizes those
+        # bytes unless the URL is marked as already encoded, invalidating the
+        # signature.  Preserve the wire URL while still allowing explicit
+        # ``params`` to be encoded normally.
+        request_url: str | URL = url
+        if isinstance(url, str) and kwargs.get("params") is None:
+            request_url = URL(url, encoded=True)
         try:
-            async with request(url, headers=merged, **kwargs) as response:
+            async with request(request_url, headers=merged, **kwargs) as response:
                 if response.status < 200 or response.status >= 300:
                     raise _translate_status(response.status, url, method)
                 yield response
-        except aiohttp.ServerTimeoutError as exc:
-            raise TimeoutError(f"{method} {url} timed out") from exc
+        except (aiohttp.ServerTimeoutError, TimeoutError) as exc:
+            raise SdkTimeoutError(f"{method} {url} timed out") from exc
+        except (
+            aiohttp.ClientConnectionError,
+            aiohttp.ServerDisconnectedError,
+            aiohttp.ClientOSError,
+        ) as exc:
+            raise UpstreamUnreachable(f"{method} {url} unreachable: {exc}") from exc
         except aiohttp.ClientError as exc:
             raise HttpError(f"{method} {url} failed: {exc}") from exc
 

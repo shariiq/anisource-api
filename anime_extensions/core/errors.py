@@ -51,6 +51,13 @@ class UpstreamUnavailable(HttpError):
         super().__init__(message, status_code=status_code)
 
 
+class UpstreamUnreachable(HttpError):
+    """Raised when an upstream host is unreachable due to DNS, connection, or TLS failures."""
+
+    def __init__(self, message: str, status_code: int = 503) -> None:
+        super().__init__(message, status_code=status_code)
+
+
 class TimeoutError(HttpError):
     """Raised when a request times out."""
 

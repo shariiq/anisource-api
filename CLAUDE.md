@@ -16,7 +16,7 @@ Operate at principal-engineer quality.
 
 - **Commands:** Run commands from the project subdirectory:
 
-  - `cd anime-extensions-py; uv run <cmd>`
+  - `uv run <cmd>`
   - or `git -C anime-extensions-py <cmd>`
 
 - **Repository:** `https://github.com/shariiq/anisource-api.git`

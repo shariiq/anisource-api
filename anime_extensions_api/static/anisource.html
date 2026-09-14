@@ -202,7 +202,7 @@
   .chip.teal{ color: var(--teal); border-color: rgba(63,191,174,0.4); }
   .chip.flame{ color: var(--flame-2); border-color: rgba(255,107,78,0.4); }
   .hero__desc{ color: var(--paper-dim); font-size:0.94rem; max-width: 58ch;
-    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:22px; }
+    display:-webkit-box; line-clamp:3; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; margin-bottom:22px; }
   .hero__actions{ display:flex; gap:12px; flex-wrap:wrap; }
 
   .btn{
@@ -255,7 +255,7 @@
     font-size:0.68rem; font-weight:700; padding:2px 6px; border-radius:3px; display:flex; align-items:center; gap:3px;
   }
   .card__title{ font-size:0.82rem; font-weight:600; line-height:1.3;
-    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    display:-webkit-box; line-clamp:2; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .card__meta{ font-size:0.7rem; color: var(--paper-faint); }
 
   .skeleton{ background: linear-gradient(100deg, var(--ink-soft) 30%, var(--ink-soft-2) 50%, var(--ink-soft) 70%);
@@ -326,7 +326,6 @@
   .server-chip{ border:1px solid var(--line-strong); border-radius:999px; padding:7px 14px; font-size:0.8rem; font-weight:600; }
   .server-chip:hover{ border-color: var(--flame-2); }
   .server-chip.active{ background: var(--flame); border-color: var(--flame); color:#170F10; }
-  .server-chip.type-Dub{ }
 
   .player-box{ margin-top:16px; border:1px solid var(--line-strong); border-radius: var(--radius-lg); overflow:hidden; background:#000; }
   .player-box video{ width:100%; max-height: 62vh; display:block; background:#000; }
@@ -440,6 +439,7 @@
 const API_BASE = (window.location.protocol === "file:" || window.location.origin === "null")
   ? "https://anisource-api.onrender.com"
   : "";
+const ANILIST_BASE = "https://graphql.anilist.co";
 const LS_KEY = "anisource:lastSource";
 const COLD_START_DELAY = 4500;   // ms before we show the "waking up" banner
 const FETCH_TIMEOUT   = 45000;   // generous, Render free tier can be slow to wake
@@ -452,6 +452,8 @@ const state = {
   sources: [],
   currentSource: null,   // id string
   health: null,
+  // AniList-specific state
+  aniListCache: new Map(), // Simple cache for AniList queries
 };
 
 const HIDDEN_SOURCE_IDS = new Set();
@@ -516,52 +518,346 @@ async function copyText(text){
 }
 
 /* ============================================================ */
-/* API layer                                                       */
+/* Storage Utility                                                  */
+/* ============================================================ */
+const Storage = {
+  get: (key, def = null) => {
+    try {
+      const v = localStorage.getItem(key);
+      return v === null ? def : JSON.parse(v);
+    } catch(e) { return def; }
+  },
+  set: (key, val) => {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {}
+  },
+  remove: (key) => {
+    try { localStorage.removeItem(key); } catch(e) {}
+  }
+};
+
+/* ============================================================ */
+/* Network Layer                                                    */
+/* ============================================================ */
+class NetError extends Error {
+  constructor(msg, status = 0, code = "NETWORK_ERROR") {
+    super(msg);
+    this.status = status;
+    this.code = code;
+    this.name = "NetError";
+  }
+}
+
+const Net = {
+  inflight: new Map(),
+  cache: new Map(),
+
+  async request(url, opts = {}) {
+    const {
+      method = "GET",
+      body = null,
+      headers = {},
+      params = null,
+      ttl = 0,
+      retry = 3,
+      signal = null
+    } = opts;
+
+    // 1. Cache Lookup
+    const cacheKey = `${method}:${url}${params ? "?" + new URLSearchParams(params) : ""}`;
+    if (ttl > 0 && this.cache.has(cacheKey)) {
+      const { t, data } = this.cache.get(cacheKey);
+      if (Date.now() - t < ttl) return data;
+    }
+
+    // 2. Single-flight Deduplication
+    if (this.inflight.has(cacheKey)) return this.inflight.get(cacheKey);
+
+    const promise = (async () => {
+      let lastErr;
+      for (let i = 0; i <= retry; i++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+        const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+
+        try {
+          const finalUrl = params ? `${url}?${new URLSearchParams(params)}` : url;
+          const res = await fetch(finalUrl, {
+            method,
+            headers: { "Accept": "application/json", ...headers },
+            body: body ? JSON.stringify(body) : null,
+            signal: combinedSignal
+          });
+
+          clearTimeout(timeout);
+
+          if (!res.ok) {
+            if (res.status === 429 || (res.status >= 500 && i < retry)) {
+              throw new NetError("Upstream failure", res.status);
+            }
+            let detail = "";
+            try {
+              const body = await res.json();
+              detail = Array.isArray(body.detail) ? body.detail.map(d=>d.msg).join("; ") : (body.detail || "");
+            } catch(e){}
+            throw new NetError(detail || `Request failed (${res.status})`, res.status);
+          }
+
+          const data = await res.json();
+          if (ttl > 0) this.cache.set(cacheKey, { t: Date.now(), data });
+          return data;
+
+        } catch (err) {
+          clearTimeout(timeout);
+          lastErr = err;
+          if (err.name === "AbortError") throw new NetError("Request timed out or was cancelled");
+          if (err instanceof NetError && err.status !== 429 && err.status < 500) throw err;
+
+          // Exponential backoff
+          if (i < retry) await new Promise(r => setTimeout(r, Math.pow(2, i) * 500));
+        }
+      }
+      throw lastErr || new NetError("Unknown network error");
+    })();
+
+    this.inflight.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this.inflight.delete(cacheKey);
+    }
+  }
+};
+
+async function aniListPost(query, variables = {}) {
+  return Net.request(ANILIST_BASE, {
+    method: "POST",
+    body: { query, variables },
+    ttl: 3600 * 1000 // 1 hour cache for metadata
+  });
+}
+
+
+// AniList query constants
+const ANILIST_QUERIES = {
+  // Get trending/popular anime
+  DISCOVER: `
+    query Discover($page: Int, $perPage: Int, $sort: [MediaSort]) {
+      Page(page: $page, perPage: $perPage) {
+        pageInfo {
+          total
+          currentPage
+          lastPage
+          hasNextPage
+          perPage
+        }
+        media(type: ANIME, sort: $sort) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          format
+          status
+          description(asHtml: false)
+          startDate {
+            year
+            month
+            day
+          }
+          endDate {
+            year
+            month
+            day
+          }
+          season
+          seasonYear
+          episodes
+          duration
+          chapters
+          volumes
+          siteUrl
+          coverImage {
+            large
+            medium
+            color
+          }
+          bannerImage
+          genres
+          studios(isMain: true) {
+            nodes {
+              name
+            }
+          }
+          averageScore
+          popularity
+          favourites
+          tags {
+            name
+            rank
+          }
+        }
+      }
+    }
+  `,
+
+  // Search anime
+  SEARCH: `
+    query Search($query: String, $page: Int, $perPage: Int) {
+      Page(page: $page, perPage: $perPage) {
+        pageInfo {
+          total
+          currentPage
+          lastPage
+          hasNextPage
+          perPage
+        }
+        media(search: $query, type: ANIME) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          format
+          status
+          description(asHtml: false)
+          startDate {
+            year
+            month
+            day
+          }
+          endDate {
+            year
+            month
+            day
+          }
+          season
+          seasonYear
+          episodes
+          duration
+          chapters
+          volumes
+          siteUrl
+          coverImage {
+            large
+            medium
+            color
+          }
+          bannerImage
+          genres
+          studios(isMain: true) {
+            nodes {
+              name
+            }
+          }
+          averageScore
+          popularity
+          favourites
+          tags {
+            name
+            rank
+          }
+        }
+      }
+    }
+  `,
+
+  // Get detailed anime info by ID
+  MEDIA: `
+    query Media($id: Int) {
+      Media(id: $id, type: ANIME) {
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        format
+        status
+        description(asHtml: false)
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        season
+        seasonYear
+        episodes
+        duration
+        chapters
+        volumes
+        siteUrl
+        coverImage {
+          large
+          medium
+          color
+        }
+        bannerImage
+        genres
+        studios {
+          nodes {
+            name
+          }
+        }
+        averageScore
+        popularity
+        favourites
+        tags {
+          name
+          rank
+        }
+        trailer {
+          id
+          site
+          thumbnail
+        }
+        externalLinks {
+          url
+          site
+        }
+        streamingEpisodes {
+          title
+          url
+          site
+          thumbnail
+        }
+      }
+    }
+  `
+};
+
+const AniList = {
+  discover: (sort, page = 1, perPage = 20) => aniListPost(ANILIST_QUERIES.DISCOVER, { sort: [sort], page, perPage }),
+  trending: (page = 1, perPage = 20) => AniList.discover("TRENDING_DESC", page, perPage),
+  latest: (page = 1, perPage = 20) => AniList.discover("UPDATED_AT_DESC", page, perPage),
+  popular: (page = 1, perPage = 20) => AniList.discover("POPULARITY_DESC", page, perPage),
+  search: (query, page = 1, perPage = 20) => aniListPost(ANILIST_QUERIES.SEARCH, { query, page, perPage }),
+  media: (id) => aniListPost(ANILIST_QUERIES.MEDIA, { id })
+};
+
+/* ============================================================ */
+/* API layer (unchanged - still used for playback)                */
 /* ============================================================ */
 class ApiError extends Error{
   constructor(msg, status){ super(msg); this.status = status; }
 }
 
 async function apiGet(path, { useCache=true, raw=false } = {}){
-  if(useCache && cache.has(path)){
-    const hit = cache.get(path);
-    if(Date.now() - hit.t < CACHE_TTL) return hit.data;
-    cache.delete(path);
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(()=>controller.abort(), FETCH_TIMEOUT);
-  const coldTimer = setTimeout(()=>{ coldBanner.hidden = false; }, COLD_START_DELAY);
-
-  try{
-    const res = await fetch(API_BASE + path, { signal: controller.signal, headers: { "Accept":"application/json" } });
-    clearTimeout(coldTimer);
-    coldBanner.hidden = true;
-
-    if(!res.ok){
-      let detail = "";
-      try{
-        const body = await res.json();
-        if(Array.isArray(body.detail)) detail = body.detail.map(d=>d.msg).join("; ");
-        else if(typeof body.detail === "string") detail = body.detail;
-      }catch(e){}
-      throw new ApiError(detail || `Request failed (${res.status})`, res.status);
-    }
-
-    const data = raw ? await res.text() : await res.json();
-    if(useCache) cache.set(path, { t: Date.now(), data });
-    return data;
-
-  }catch(err){
-    clearTimeout(coldTimer);
-    coldBanner.hidden = true;
-    if(err.name === "AbortError"){
-      throw new ApiError("The API took too long to respond. It may still be waking up — try again in a moment.");
-    }
-    if(err instanceof ApiError) throw err;
+  try {
+    const res = await Net.request(API_BASE + path, {
+      method: "GET",
+      ttl: useCache ? CACHE_TTL : 0
+    });
+    return raw ? JSON.stringify(res) : res;
+  } catch (err) {
+    if (err instanceof NetError) throw new ApiError(err.message, err.status);
     throw new ApiError("Couldn't reach the API. Check your connection, or it may be waking up from sleep.");
-  }finally{
-    clearTimeout(timeout);
   }
 }
 
@@ -635,11 +931,9 @@ sourceMenu.addEventListener("click", (e) => {
   sourceMenu.classList.remove("open");
   sourceBtn.setAttribute("aria-expanded","false");
   toast(`Switched to ${state.sources.find(s=>s.id===state.currentSource)?.name || state.currentSource}`);
-  if(location.hash.startsWith("#/anime/") || location.hash.startsWith("#/search")) {
-    location.hash = "#/";
-  } else {
-    route();
-  }
+  // AniList metadata remains stable; re-resolve the selected title's episodes
+  // against the newly selected source when a detail page is open.
+  route();
 });
 document.addEventListener("click", (e) => {
   if(!e.target.closest(".source-select")) { sourceMenu.classList.remove("open"); sourceBtn.setAttribute("aria-expanded","false"); }
@@ -697,15 +991,17 @@ searchInput.addEventListener("input", () => {
   searchDebounce = setTimeout(async () => {
     if(!state.currentSource) return;
     try{
-      const res = await Api.search(state.currentSource, q, 1);
-      const items = (res.items||[]).slice(0,6);
+      // Use AniList for search suggestions
+      const res = await AniList.search(q, 1, 6);
+      const items = (res.Page?.media||[]);
       if(!items.length){
         searchSuggest.innerHTML = `<div style="padding:14px;font-size:0.8rem;color:var(--paper-faint)">No matches for "${escapeHTML(q)}"</div>`;
       }else{
         searchSuggest.innerHTML = items.map(a => `
-          <a class="search__row" href="#/anime/${encodeURIComponent(state.currentSource)}/${encodeURIComponent(a.id)}">
-            <img src="${escapeHTML(a.thumbnail || placeholderPoster(a.title))}" alt="" loading="lazy" onerror="this.src='${placeholderPoster(a.title)}'">
-            <span><span class="t">${escapeHTML(a.title)}</span><br><span class="s">${escapeHTML(a.status||"")}</span></span>
+          <a class="search__row" href="#/anime/anilist/${a.id}">
+            <img src="${escapeHTML(a.coverImage?.large || placeholderPoster(a.title.english || a.title.romaji))}" alt="" loading="lazy" decoding="async"
+                 onerror="this.onerror=null;this.src='${placeholderPoster(a.title.english || a.title.romaji)}'">
+            <span><span class="t">${escapeHTML(a.title.english || a.title.romaji)}</span><br><span class="s">${escapeHTML(a.status)}</span></span>
           </a>`).join("") + `<a class="search__more" href="#/search?q=${encodeURIComponent(q)}">See all results →</a>`;
       }
       searchSuggest.classList.add("open");
@@ -749,7 +1045,21 @@ function skeletonGrid(n){
     <div class="skeleton" style="height:9px;border-radius:3px;width:50%"></div></div>`).join("")}</div>`;
 }
 
-function animeCard(a, sourceId){
+function animeCardFromAniList(media){
+  const title = media.title.english || media.title.romaji || media.title.native || "Unknown";
+  const meta = [media.status, media.genres[0]].filter(Boolean).join(" · ");
+  return `<a class="card" href="#/anime/anilist/${media.id}">
+    <div class="card__media">
+      <img src="${escapeHTML(media.coverImage?.large || placeholderPoster(title))}" alt="" loading="lazy" decoding="async"
+           onerror="this.onerror=null;this.src='${placeholderPoster(title)}'">
+      ${media.averageScore!=null ? `<span class="card__score">★ ${fmtNumber(media.averageScore/10)}</span>` : ""}
+    </div>
+    <h3 class="card__title">${escapeHTML(title)}</h3>
+    ${meta ? `<div class="card__meta">${escapeHTML(meta)}</div>` : ""}
+  </a>`;
+}
+
+function animeCardFromSource(a, sourceId){
   const meta = [a.status, (a.genres||[])[0]].filter(Boolean).join(" · ");
   return `<a class="card" href="#/anime/${encodeURIComponent(sourceId)}/${encodeURIComponent(a.id)}">
     <div class="card__media">
@@ -762,10 +1072,10 @@ function animeCard(a, sourceId){
   </a>`;
 }
 
-function buildRail(container, items, sourceId){
+function buildRail(container, items, sourceId, isAniList = false){
   container.innerHTML = `
     <button class="rail__arrow prev" aria-label="Scroll left">‹</button>
-    <div class="rail__track">${items.map(a=>animeCard(a, sourceId)).join("")}</div>
+    <div class="rail__track">${items.map(item => isAniList ? animeCardFromAniList(item) : animeCardFromSource(item, sourceId)).join("")}</div>
     <button class="rail__arrow next" aria-label="Scroll right">›</button>`;
   const track = container.querySelector(".rail__track");
   container.querySelector(".prev").addEventListener("click", ()=> track.scrollBy({left:-track.clientWidth*0.85, behavior:"smooth"}));
@@ -776,10 +1086,6 @@ function buildRail(container, items, sourceId){
 /* View: Home                                                       */
 /* ============================================================ */
 async function viewHome(){
-  if(!state.currentSource){
-    view.innerHTML = `<div class="state"><h3>No source selected</h3><p>Pick a source from the top bar, or explore what's registered on the API.</p><a class="btn primary" href="#/sources">Browse sources</a></div>`;
-    return;
-  }
   const src = state.currentSource;
   view.innerHTML = `
     <section class="hero" id="hero" style="display:none">
@@ -796,43 +1102,43 @@ async function viewHome(){
         </div>
       </div>
     </section>
-    <section class="section"><div class="section__head"><h2 class="section__title">Popular</h2><a class="section__link" href="#/browse/popular/1">See all →</a></div>
-      <div class="rail" id="railPopular">${skeletonRow(6)}</div>
+    <section class="section"><div class="section__head"><h2 class="section__title">Trending (Global)</h2><a class="section__link" href="#/browse/trending/1">See all →</a></div>
+      <div class="rail" id="railTrending">${skeletonRow(6)}</div>
     </section>
-    <section class="section"><div class="section__head"><h2 class="section__title">Latest releases</h2><a class="section__link" href="#/browse/latest/1">See all →</a></div>
+    <section class="section"><div class="section__head"><h2 class="section__title">Latest Releases (Global)</h2><a class="section__link" href="#/browse/latest/1">See all →</a></div>
       <div class="rail" id="railLatest">${skeletonRow(6)}</div>
     </section>
   `;
 
-  document.getElementById("heroSource").textContent = state.sources.find(s=>s.id===src)?.name || src;
+  document.getElementById("heroSource").textContent = state.sources.find(s=>s.id===src)?.name || "AniList";
 
-  let popularItems = [];
+  let trendingItems = [];
   try{
-    const pop = await Api.popular(src, 1);
-    popularItems = pop.items || [];
-    const railEl = document.getElementById("railPopular");
+    const trending = await AniList.trending(1, 6);
+    trendingItems = trending.Page?.media || [];
+    const railEl = document.getElementById("railTrending");
     if(!railEl) return; // navigated away
-    if(popularItems.length) buildRail(railEl, popularItems, src);
-    else railEl.innerHTML = `<div class="state"><p>This source has no popular listing right now.</p></div>`;
+    if(trendingItems.length) buildRail(railEl, trendingItems, src, true);
+    else railEl.innerHTML = `<div class="state"><p>No trending anime found.</p></div>`;
 
-    if(popularItems[0]){
-      fillHero(popularItems[0], src);
+    if(trendingItems[0]){
+      fillHero(trendingItems[0], src);
       document.getElementById("hero").style.display = "flex";
       document.getElementById("heroRandom").addEventListener("click", () => {
-        const pick = popularItems[Math.floor(Math.random()*popularItems.length)];
+        const pick = trendingItems[Math.floor(Math.random()*trendingItems.length)];
         fillHero(pick, src);
       });
     }
   }catch(err){
-    const railEl = document.getElementById("railPopular");
+    const railEl = document.getElementById("railTrending");
     if(railEl) railEl.innerHTML = `<div class="inline-error">⚠ ${escapeHTML(err.message)}</div>`;
   }
 
   try{
-    const lat = await Api.latest(src, 1);
+    const latest = await Api.latest(src, 1);
     const railEl = document.getElementById("railLatest");
     if(!railEl) return;
-    if((lat.items||[]).length) buildRail(railEl, lat.items, src);
+    if((latest.items||[]).length) buildRail(railEl, latest.items, src);
     else railEl.innerHTML = `<div class="state"><p>No latest updates found for this source.</p></div>`;
   }catch(err){
     const railEl = document.getElementById("railLatest");
@@ -840,27 +1146,33 @@ async function viewHome(){
   }
 }
 
-function fillHero(a, src){
+function fillHero(media, src){
   const bg = document.getElementById("heroBg");
   if(!bg) return;
-  bg.style.backgroundImage = `url("${(a.thumbnail || placeholderPoster(a.title)).replace(/"/g,'\\"')}")`;
-  document.getElementById("heroTitle").textContent = a.title;
-  document.getElementById("heroDesc").textContent = a.description || "No synopsis available for this title yet.";
-  document.getElementById("heroCta").href = `#/anime/${encodeURIComponent(src)}/${encodeURIComponent(a.id)}`;
+  bg.style.backgroundImage = `url("${(media.coverImage?.large || placeholderPoster(media.title.english || media.title.romaji)).replace(/"/g,'\\"')}")`;
+  document.getElementById("heroTitle").textContent = media.title.english || media.title.romaji || media.title.native || "Unknown";
+  const desc = media.description?.replace(/<br\s*\/?>/g, '\n').replace(/<[^>]*>/g, '') || "No synopsis available for this title yet.";
+  document.getElementById("heroDesc").textContent = desc;
+  document.getElementById("heroCta").href = `#/anime/anilist/${media.id}`;
   const meta = [];
-  if(a.score!=null) meta.push(`<span class="chip gold">★ ${fmtNumber(a.score)}</span>`);
-  if(a.status) meta.push(`<span class="chip teal">${escapeHTML(a.status)}</span>`);
-  (a.genres||[]).slice(0,3).forEach(g => meta.push(`<span class="chip">${escapeHTML(g)}</span>`));
+  if(media.averageScore!=null) meta.push(`<span class="chip gold">★ ${fmtNumber(media.averageScore/10)}</span>`);
+  if(media.status) meta.push(`<span class="chip teal">${escapeHTML(media.status)}</span>`);
+  (media.genres||[]).slice(0,3).forEach(g => meta.push(`<span class="chip">${escapeHTML(g)}</span>`));
   document.getElementById("heroMeta").innerHTML = meta.join("");
 }
 
 /* ============================================================ */
-/* View: Browse (popular/latest, paginated grid)                    */
+/* View: Browse (trending/latest, paginated grid)                    */
 /* ============================================================ */
 async function viewBrowse(kind, startPage){
   const src = state.currentSource;
   if(!src){ view.innerHTML = errorState("No source selected","Pick a source from the top bar first."); return; }
-  const title = kind === "popular" ? "Popular anime" : "Latest releases";
+  const titleMap = {
+    trending: "Trending Anime",
+    latest: "Latest Releases",
+    popular: "Popular Anime"
+  };
+  const title = titleMap[kind] || "Browse";
   view.innerHTML = `
     <section class="section" style="padding-top:34px">
       <div class="section__head"><h2 class="section__title">${title}</h2></div>
@@ -880,19 +1192,31 @@ async function viewBrowse(kind, startPage){
     loading = true;
     document.getElementById("browseLoading").style.display = "flex";
     try{
-      const fn = kind === "popular" ? Api.popular : Api.latest;
-      const res = await fn(src, page);
+      let res;
+      if(kind === "trending"){
+        res = await AniList.trending(page, 12);
+        res = res.Page;
+      } else if(kind === "latest"){
+        res = await Api.latest(src, page);
+      } else if(kind === "popular"){
+        res = await Api.popular(src, page);
+      }
+
       if(!gridEl.isConnected) return;
       if(firstLoad) gridEl.innerHTML = "";
       firstLoad = false;
-      if(!res.items || !res.items.length){
-        if(page === 1) gridEl.innerHTML = `<div class="state"><h3>Nothing here</h3><p>This source didn't return any titles for "${title}".</p></div>`;
-        hasNext = false;
-      }else{
-        gridEl.insertAdjacentHTML("beforeend", res.items.map(a=>animeCard(a, src)).join(""));
-        hasNext = !!res.has_next;
-        page += 1;
-      }
+
+        const items = kind === "trending" ? res.media : res.items;
+        if(!items || !items.length){
+          if(page === 1) gridEl.innerHTML = `<div class="state"><h3>Nothing here</h3><p>${kind === "trending" ? "AniList" : "This source"} didn't return any titles for "${title}".</p></div>`;
+          hasNext = false;
+        }else{
+          gridEl.insertAdjacentHTML("beforeend", items.map(item =>
+            kind === "trending" ? animeCardFromAniList(item) : animeCardFromSource(item, src)
+          ).join(""));
+          hasNext = kind === "trending" ? !!res.pageInfo.hasNextPage : !!res.has_next;
+          page += 1;
+        }
     }catch(err){
       gridEl.insertAdjacentHTML("beforeend", `<div class="inline-error" style="grid-column:1/-1">⚠ ${escapeHTML(err.message)} <button class="btn ghost small" id="retryBrowse">Retry</button></div>`);
       document.getElementById("retryBrowse")?.addEventListener("click", loadPage);
@@ -938,18 +1262,23 @@ async function viewSearch(query, startPage){
     loading = true;
     document.getElementById("searchLoading").style.display = "flex";
     try{
-      const res = await Api.search(src, query, page);
+      // Use AniList for search
+      const res = await AniList.search(query, page, 10);
+      const pageInfo = res.Page.pageInfo;
+      const items = res.Page.media;
+
       if(!gridEl.isConnected) return;
       if(firstLoad) gridEl.innerHTML = "";
       firstLoad = false;
-      if(!res.items || !res.items.length){
-        if(page === 1) gridEl.innerHTML = `<div class="state"><h3>No matches</h3><p>Nothing found for "${escapeHTML(query)}" on this source. Try another source from the top bar.</p></div>`;
+
+      if(!items || !items.length){
+        if(page === 1) gridEl.innerHTML = `<div class="state"><h3>No matches</h3><p>Nothing found for "${escapeHTML(query)}". Try another source from the top bar.</p></div>`;
         hasNext = false;
       }else{
-        total += res.items.length;
+        total += items.length;
         document.getElementById("resultCount").textContent = `${total} shown`;
-        gridEl.insertAdjacentHTML("beforeend", res.items.map(a=>animeCard(a, src)).join(""));
-        hasNext = !!res.has_next;
+        gridEl.insertAdjacentHTML("beforeend", items.map(animeCardFromAniList).join(""));
+        hasNext = !!pageInfo.hasNextPage;
         page += 1;
       }
     }catch(err){
@@ -969,6 +1298,69 @@ async function viewSearch(query, startPage){
 }
 
 /* ============================================================ */
+/* View: Schedule                                                 */
+/* ============================================================ */
+async function viewSchedule(pageNum){
+  const src = state.currentSource;
+  if(!src){ view.innerHTML = errorState("No source selected","Pick a source from the top bar first."); return; }
+
+  view.innerHTML = `
+    <section class="section" style="padding-top:34px">
+      <div class="section__head">
+        <h2 class="section__title">Airing Schedule</h2>
+        <span class="section__link" id="scheduleCount" aria-live="polite"></span>
+      </div>
+      <div id="scheduleGrid">${skeletonGrid(12)}</div>
+      <div class="sentinel" id="sentinel"></div>
+      <div id="scheduleLoading" class="inline-loading" style="display:none"><span class="spin"></span> Loading more…</div>
+    </section>`;
+
+  const gridEl = document.getElementById("scheduleGrid");
+  let page = parseInt(pageNum,10) || 1;
+  let hasNext = true;
+  let loading = false;
+  let firstLoad = true;
+  let total = 0;
+
+  async function loadPage(){
+    if(loading || !hasNext) return;
+    loading = true;
+    document.getElementById("scheduleLoading").style.display = "flex";
+    try{
+      const res = await Api.latest(src, page);
+      const items = res.items || [];
+
+      if(!gridEl.isConnected) return;
+      if(firstLoad) gridEl.innerHTML = "";
+      firstLoad = false;
+
+      if(!items || !items.length){
+        if(page === 1) gridEl.innerHTML = `<div class="state"><h3>No airing schedule</h3><p>This source doesn't have any currently airing anime.</p></div>`;
+        hasNext = false;
+      }else{
+        total += items.length;
+        document.getElementById("scheduleCount").textContent = `${total} shown`;
+        gridEl.insertAdjacentHTML("beforeend", items.map(item => animeCardFromSource(item, src)).join(""));
+        hasNext = !!res.has_next;
+        page += 1;
+      }
+    }catch(err){
+      gridEl.insertAdjacentHTML("beforeend", `<div class="inline-error" style="grid-column:1/-1">⚠ ${escapeHTML(err.message)} <button class="btn ghost small" id="retrySchedule">Retry</button></div>`);
+      document.getElementById("retrySchedule")?.addEventListener("click", loadPage);
+      hasNext = false;
+    }finally{
+      loading = false;
+      document.getElementById("scheduleLoading").style.display = "none";
+    }
+  }
+
+  await loadPage();
+  const sentinel = document.getElementById("sentinel");
+  const io = new IntersectionObserver((entries)=>{ if(entries[0].isIntersecting) loadPage(); }, { rootMargin:"600px" });
+  io.observe(sentinel);
+}
+
+/* ============================================================ */
 /* View: Anime detail                                               */
 /* ============================================================ */
 let activeHls = null;
@@ -976,8 +1368,13 @@ function destroyPlayer(){
   if(activeHls){ try{ activeHls.destroy(); }catch(e){} activeHls = null; }
 }
 
-async function viewDetail(sourceId, animeId){
+async function viewDetail(sourceIdParam, animeIdParam){
   destroyPlayer();
+
+  // "anilist" sentinel triggers AniList metadata + source resolution flow.
+  // All other values are source-ids (e.g. "aniwaves/abc123" or plain "abc123").
+  const isAniList = sourceIdParam === "anilist";
+
   view.innerHTML = `
     <div class="detail__head">
       <div class="detail__bg" id="dBg"></div>
@@ -987,55 +1384,136 @@ async function viewDetail(sourceId, animeId){
       </div>
       <div class="detail__body" id="dBody">
         <div class="detail__poster skeleton" style="aspect-ratio:2/3"></div>
-        <div class="detail__info">
-          <div class="skeleton" style="height:34px;width:60%;border-radius:4px;margin-bottom:14px"></div>
-          <div class="skeleton" style="height:14px;width:90%;border-radius:4px;margin-bottom:8px"></div>
-          <div class="skeleton" style="height:14px;width:80%;border-radius:4px"></div>
-        </div>
+        <div class="skeleton" style="height:34px;width:60%;border-radius:4px;margin-bottom:14px"></div>
+        <div class="skeleton" style="height:14px;width:90%;border-radius:4px;margin-bottom:8px"></div>
+        <div class="skeleton" style="height:14px;width:80%;border-radius:4px"></div>
       </div>
     </div>
     <div class="episodes"><div class="inline-loading"><span class="spin"></span> Loading episodes…</div></div>
   `;
 
-  let a;
-  try{
-    a = await Api.anime(sourceId, animeId);
-  }catch(err){
-    view.innerHTML = `<div class="state"><h3>Couldn't load this title</h3><p>${escapeHTML(err.message)}</p><a class="btn ghost small" href="#/">← Back home</a></div>`;
-    return;
-  }
-  if(!view.querySelector("#dBody")) return;
+  if(isAniList){
+    // Handle AniList media ID
+    const aniListId = parseInt(animeIdParam);
+    try{
+      const aniListMedia = await AniList.media(aniListId);
+      const media = aniListMedia.Media;
 
-  document.getElementById("dBg").style.backgroundImage = `url("${(a.thumbnail||"").replace(/"/g,'\\"')}")`;
-  const chips = [];
-  if(a.score!=null) chips.push(`<span class="chip gold">★ ${fmtNumber(a.score)}</span>`);
-  if(a.status) chips.push(`<span class="chip teal">${escapeHTML(a.status)}</span>`);
-  (a.genres||[]).forEach(g => chips.push(`<span class="chip">${escapeHTML(g)}</span>`));
+      if(!view.querySelector("#dBody")) return;
 
-  document.getElementById("dBody").innerHTML = `
-    <div class="detail__poster">
-      <img src="${escapeHTML(a.thumbnail || placeholderPoster(a.title))}" alt="" onerror="this.onerror=null;this.src='${placeholderPoster(a.title)}'">
-    </div>
-    <div class="detail__info">
-      <h1 class="detail__title">${escapeHTML(a.title)}</h1>
-      ${(a.alternative_titles||[]).length ? `<div class="detail__alt">${escapeHTML(a.alternative_titles.join(" · "))}</div>` : ""}
-      <div class="detail__chips">${chips.join("")}</div>
-      <p class="detail__desc">${escapeHTML(a.description || "No synopsis available for this title.")}</p>
-      <div class="detail__facts">
-        ${a.studios?.length ? `<div><b>Studio</b>${escapeHTML(a.studios.join(", "))}</div>` : ""}
-        ${a.producers?.length ? `<div><b>Producers</b>${escapeHTML(a.producers.join(", "))}</div>` : ""}
-        <div><b>Source page</b><a href="${escapeHTML(a.url)}" target="_blank" rel="noopener" style="color:var(--flame-2)">Open on ${escapeHTML(state.sources.find(s=>s.id===sourceId)?.name||sourceId)} ↗</a></div>
-      </div>
-      ${a.tags?.length ? `<div class="tag-row">${a.tags.map(t=>`<span class="tag">${escapeHTML(t)}</span>`).join("")}</div>` : ""}
-    </div>`;
+      // Set background
+      document.getElementById("dBg").style.backgroundImage = `url("${(media.coverImage?.large || "").replace(/"/g,'\\"')}")`;
 
-  const epContainer = view.querySelector(".episodes");
-  try{
-    const episodes = await Api.episodes(sourceId, animeId);
-    renderEpisodes(epContainer, episodes, sourceId, animeId);
-  }catch(err){
-    epContainer.innerHTML = `<div class="inline-error">⚠ Couldn't load episodes — ${escapeHTML(err.message)} <button class="btn ghost small" id="retryEp">Retry</button></div>`;
-    document.getElementById("retryEp")?.addEventListener("click", () => viewDetail(sourceId, animeId));
+      // Build rich detail view
+      const title = media.title.english || media.title.romaji || media.title.native || "Unknown";
+      const format = media.format ? `${media.format}` : "";
+      const status = media.status ? `${media.status.charAt(0).toUpperCase() + media.status.slice(1).toLowerCase()}` : "";
+      const seasons = media.season && media.seasonYear ? `${media.season.charAt(0).toUpperCase() + media.season.slice(1)} ${media.seasonYear}` : "";
+      const aired = media.startDate.year ? `${fmtDate(`${media.startDate.year}-${media.startDate.month || 1}-${media.startDate.day || 1}`)} – ${media.endDate.year ? fmtDate(`${media.endDate.year}-${media.endDate.month || 1}-${media.endDate.day || 1}`) : "TBA"}` : "";
+      const duration = media.episodes ? `${media.episodes} eps` : "";
+      const chapters = media.chapters ? `${media.chapters} ch` : "";
+      const volumes = media.volumes ? `${media.volumes} vol` : "";
+
+      const chips = [];
+      if(media.averageScore!=null) chips.push(`<span class="chip gold">★ ${fmtNumber(media.averageScore/10)}</span>`);
+      if(media.status) chips.push(`<span class="chip teal">${escapeHTML(media.status)}</span>`);
+      (media.genres||[]).forEach(g => chips.push(`<span class="chip">${escapeHTML(g)}</span>`));
+
+      const studios = (media.studios?.nodes||[]).map(s => escapeHTML(s.name)).join(", ") || "";
+
+      document.getElementById("dBody").innerHTML = `
+        <div class="detail__poster">
+          <img src="${escapeHTML(media.coverImage?.large || placeholderPoster(title))}" alt="" onerror="this.onerror=null;this.src='${placeholderPoster(title)}'">
+        </div>
+        <div class="detail__info">
+          <h1 class="detail__title">${escapeHTML(title)}</h1>
+          ${format || status || seasons ? `<div class="detail__alt">${[format, status, seasons].filter(Boolean).join(" · ")}</div>` : ""}
+          <div class="detail__chips">${chips.join("")}</div>
+          <p class="detail__desc">${escapeHTML(media.description?.replace(/<br\s*\/?>/g, '\n').replace(/<[^>]*>/g, '') || "No synopsis available for this title.")}</p>
+          <div class="detail__facts">
+            ${studios ? `<div><b>Studio</b>${studios}</div>` : ""}
+            ${aired ? `<div><b>Aired</b>${aired}</div>` : ""}
+            ${duration ? `<div><b>Episodes</b>${duration}</div>` : ""}
+            ${chapters ? `<div><b>Chapters</b>${chapters}</div>` : ""}
+            ${volumes ? `<div><b>Volumes</b>${volumes}</div>` : ""}
+            ${media.siteUrl ? `<div><b>Official Site</b><a href="${escapeHTML(media.siteUrl)}" target="_blank" rel="noopener" style="color:var(--flame-2)">Visit Site ↗</a></div>` : ""}
+            ${media.bannerImage ? `<div style="margin-top:14px;"><img src="${escapeHTML(media.bannerImage)}" alt="" style="width:100%; border-radius:var(--radius);" onerror="this.onerror=null;this.style.display='none'"></div>` : ""}
+          </div>
+          ${(media.tags||[]).length ? `<div class="tag-row">${media.tags.slice(0,8).map(t=>`<span class="tag">${escapeHTML(t.name)}</span>`).join("")}</div>` : ""}
+        </div>
+      `;
+
+      // Load episodes in background using source resolution
+      const epContainer = view.querySelector(".episodes");
+      epContainer.innerHTML = `<div class="inline-loading"><span class="spin"></span> Finding episodes on ${state.sources.find(s=>s.id===state.currentSource)?.name || state.currentSource}…</div>`;
+
+      // Try to find this anime on the current source
+      const sourceName = state.sources.find(s=>s.id===state.currentSource)?.name || state.currentSource;
+      try{
+        const searchRes = await Api.search(state.currentSource, title, 1);
+        const sourceMatch = searchRes.items[0];
+        if(sourceMatch){
+          // Found match, load episodes from source
+          const sourceAnimeId = sourceMatch.id;
+          const episodes = await Api.episodes(state.currentSource, sourceAnimeId);
+          renderEpisodes(epContainer, episodes, state.currentSource, sourceAnimeId);
+        } else {
+          // No match found on this source
+          epContainer.innerHTML = `<div class="state"><h3>Not available on ${sourceName}</h3><p>This anime isn't indexed on ${sourceName}. Try switching sources using the top bar to see if it's available elsewhere.</p></div>`;
+        }
+      }catch(err){
+        epContainer.innerHTML = `<div class="inline-error">⚠ Couldn't load episodes — ${escapeHTML(err.message)} <button class="btn ghost small" id="retryEp">Retry</button></div>`;
+        document.getElementById("retryEp")?.addEventListener("click", () => viewDetail(sourceIdParam, animeIdParam));
+      }
+    }catch(err){
+      view.innerHTML = `<div class="state"><h3>Couldn't load this title</h3><p>${escapeHTML(err.message)}</p><a class="btn ghost small" href="#/">← Back home</a></div>`;
+      return;
+    }
+  } else {
+    // Handle source-specific ID (original behavior)
+    const sourceId = sourceIdParam;
+    const animeId = animeIdParam;
+
+    try{
+      const a = await Api.anime(sourceId, animeId);
+      if(!view.querySelector("#dBody")) return;
+
+      document.getElementById("dBg").style.backgroundImage = `url("${(a.thumbnail||"").replace(/"/g,'\\"')}")`;
+      const chips = [];
+      if(a.score!=null) chips.push(`<span class="chip gold">★ ${fmtNumber(a.score)}</span>`);
+      if(a.status) chips.push(`<span class="chip teal">${escapeHTML(a.status)}</span>`);
+      (a.genres||[]).forEach(g => chips.push(`<span class="chip">${escapeHTML(g)}</span>`));
+
+      document.getElementById("dBody").innerHTML = `
+        <div class="detail__poster">
+          <img src="${escapeHTML(a.thumbnail || placeholderPoster(a.title))}" alt="" onerror="this.onerror=null;this.src='${placeholderPoster(a.title)}'">
+        </div>
+        <div class="detail__info">
+          <h1 class="detail__title">${escapeHTML(a.title)}</h1>
+          ${(a.alternative_titles||[]).length ? `<div class="detail__alt">${escapeHTML(a.alternative_titles.join(" · "))}</div>` : ""}
+          <div class="detail__chips">${chips.join("")}</div>
+          <p class="detail__desc">${escapeHTML(a.description || "No synopsis available for this title.")}</p>
+          <div class="detail__facts">
+            ${a.studios?.length ? `<div><b>Studio</b>${escapeHTML(a.studios.join(", "))}</div>` : ""}
+            ${a.producers?.length ? `<div><b>Producers</b>${escapeHTML(a.producers.join(", "))}</div>` : ""}
+            <div><b>Source page</b><a href="${escapeHTML(a.url)}" target="_blank" rel="noopener" style="color:var(--flame-2)">Open on ${escapeHTML(state.sources.find(s=>s.id===sourceId)?.name||sourceId)} ↗</a></div>
+          </div>
+          ${a.tags?.length ? `<div class="tag-row">${a.tags.map(t=>`<span class="tag">${escapeHTML(t)}</span>`).join("")}</div>` : ""}
+        </div>
+      `;
+
+      const epContainer = view.querySelector(".episodes");
+      try{
+        const episodes = await Api.episodes(sourceId, animeId);
+        renderEpisodes(epContainer, episodes, sourceId, animeId);
+      }catch(err){
+        epContainer.innerHTML = `<div class="inline-error">⚠ Couldn't load episodes — ${escapeHTML(err.message)} <button class="btn ghost small" id="retryEp">Retry</button></div>`;
+        document.getElementById("retryEp")?.addEventListener("click", () => viewDetail(sourceId, animeId));
+      }
+    }catch(err){
+      view.innerHTML = `<div class="state"><h3>Couldn't load this title</h3><p>${escapeHTML(err.message)}</p><a class="btn ghost small" href="#/">← Back home</a></div>`;
+      return;
+    }
   }
 }
 
@@ -1244,7 +1722,8 @@ async function viewSources(){
     document.getElementById("statRow").innerHTML = `
       <div class="stat"><b>${filteredSources.length}</b><span>Registered sources</span></div>
       ${health ? `<div class="stat"><b>${escapeHTML(health.status)}</b><span>API status</span></div>
-      <div class="stat"><b>${fmtUptime(health.uptime_seconds)}</b><span>Uptime</span></div>` : ""}
+      <div class="stat"><b>${fmtUptime(health.uptime_seconds)}</b><span>Uptime</span></div>
+      <div class="stat"><b>${fmtNumber(health.memory_usage_mb)}</b><span>Memory</span></div>` : ""}
     `;
     document.getElementById("sourcesGrid").innerHTML = filteredSources.map(s => `
       <a class="source-card" href="#/" data-select="${escapeHTML(s.id)}">
@@ -1289,10 +1768,18 @@ function route(){
     const query = q.get("q") || "";
     if(query) viewSearch(query, q.get("page") || 1);
     else location.hash = "#/";
-  }else if(parts[0] === "anime" && parts[1] && parts[2]){
-    viewDetail(decodeURIComponent(parts[1]), decodeURIComponent(parts.slice(2).join("/")));
+  }else if(parts[0] === "anime" && parts[1]){
+    if(parts[1] === "anilist" && parts[2]){
+      viewDetail("anilist", decodeURIComponent(parts[2]));
+    }else if(parts[2]){
+      viewDetail(decodeURIComponent(parts[1]), decodeURIComponent(parts.slice(2).join("/")));
+    }else{
+      location.hash = "#/";
+    }
   }else if(parts[0] === "sources"){
     viewSources();
+  }else if(parts[0] === "schedule"){
+    viewSchedule(parts[1] || 1);
   }else{
     view.innerHTML = `<div class="state"><h3>Page not found</h3><a class="btn ghost small" href="#/">← Back home</a></div>`;
   }

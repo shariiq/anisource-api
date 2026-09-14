@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, onMount } from "solid-js";
 import type { StreamItem } from "~/api/anisource";
 import { savePlaybackProgress } from "~/features/library/history";
+import type { HlsController } from "~/features/playback/hls-engine";
 
 type PlayerState = "loading" | "ready" | "playing" | "buffering" | "paused" | "error";
 
@@ -21,7 +22,7 @@ export interface VideoPlayerProps {
 
 export function VideoPlayer(props: VideoPlayerProps) {
   let video!: HTMLVideoElement;
-  let hls: { destroy: () => void } | undefined;
+  let hls: HlsController | undefined;
   let progressTimer: number | undefined;
   let generation = 0;
   let latestPosition = props.initialPosition ?? 0;
@@ -94,15 +95,16 @@ export function VideoPlayer(props: VideoPlayerProps) {
 
     video.addEventListener("loadedmetadata", seekAfterMetadata, { once: true });
 
-    if (stream.is_hls && !video.canPlayType("application/vnd.apple.mpegurl")) {
+    // HLS Detection Logic - Matches anisource.html exactly
+    const isHls = stream.is_hls || stream.url.endsWith(".m3u8");
+    if (isHls) {
       try {
         const module = await import("./hls-engine");
         if (!isCurrent()) return;
         if (!module.isHlsSupported()) {
-          const error = "This browser cannot play this HLS stream.";
-          setState("error");
-          setMessage(error);
-          props.onError?.(error);
+          // Fallback to native if hls.js somehow not supported
+          video.src = stream.url;
+          video.load();
           return;
         }
         hls = module.initializeHls({
@@ -135,6 +137,7 @@ export function VideoPlayer(props: VideoPlayerProps) {
         props.onError?.(message);
       }
     } else {
+      // Native video fallback (for MP4, WebM, etc.)
       video.src = stream.url;
       video.load();
     }
